@@ -18,6 +18,18 @@ var away_primary := Color("#d81f35")
 var zone_grid: Node3D
 var target_cell: MeshInstance3D
 var _target_mat: StandardMaterial3D
+var receive_marker: Node3D
+var receive_disc: MeshInstance3D
+var receive_ring: MeshInstance3D
+var receive_halo: MeshInstance3D
+var receive_inner: MeshInstance3D
+var _receive_disc_mat: StandardMaterial3D
+var _receive_ring_mat: StandardMaterial3D
+var _receive_inner_mat: StandardMaterial3D
+var _receive_radius := 1.2
+var _receive_color := Color("#39d0e0")
+var _receive_progress := 0.0
+var _receive_time := 0.0
 
 func _ready() -> void:
 	home_id = "karasuno" if home_id == "" else home_id
@@ -60,6 +72,7 @@ func _build() -> void:
 	_build_net()
 	_build_gym()
 	_build_zone_grid()
+	_build_receive_marker()
 	_build_banners(home, away)
 
 func _build_environment() -> void:
@@ -360,3 +373,113 @@ func set_target_cell(x: float, z: float, valid: bool, tint: Color = Color("#ffc8
 func hide_target_cell() -> void:
 	if target_cell:
 		target_cell.visible = false
+
+func _build_receive_marker() -> void:
+	receive_marker = Node3D.new()
+	receive_marker.name = "ReceiveMarker"
+	receive_marker.visible = false
+	add_child(receive_marker)
+
+	receive_halo = MeshInstance3D.new()
+	var halo := TorusMesh.new()
+	halo.inner_radius = 0.80
+	halo.outer_radius = 1.0
+	halo.rings = 48
+	halo.ring_segments = 6
+	receive_halo.mesh = halo
+	var halo_mat := StandardMaterial3D.new()
+	halo_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	halo_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	halo_mat.albedo_color = Color(0.01, 0.035, 0.07, 0.55)
+	receive_halo.material_override = halo_mat
+	receive_halo.position.y = 0.054
+	receive_halo.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	receive_marker.add_child(receive_halo)
+
+	receive_disc = MeshInstance3D.new()
+	var disc := CylinderMesh.new()
+	disc.top_radius = 1.0
+	disc.bottom_radius = 1.0
+	disc.height = 0.014
+	disc.radial_segments = 48
+	receive_disc.mesh = disc
+	_receive_disc_mat = StandardMaterial3D.new()
+	_receive_disc_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_receive_disc_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_receive_disc_mat.albedo_color = Color(0.22, 0.82, 0.88, 0.18)
+	receive_disc.material_override = _receive_disc_mat
+	receive_disc.position.y = 0.052
+	receive_disc.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	receive_marker.add_child(receive_disc)
+
+	receive_ring = MeshInstance3D.new()
+	var torus := TorusMesh.new()
+	torus.inner_radius = 0.93
+	torus.outer_radius = 1.0
+	torus.rings = 48
+	torus.ring_segments = 8
+	receive_ring.mesh = torus
+	_receive_ring_mat = StandardMaterial3D.new()
+	_receive_ring_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_receive_ring_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_receive_ring_mat.albedo_color = Color(0.45, 0.95, 1.0, 0.95)
+	receive_ring.material_override = _receive_ring_mat
+	receive_ring.position.y = 0.066
+	receive_ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	receive_marker.add_child(receive_ring)
+
+	# A second ring closes on the centre as the ball drops: the 3D version of
+	# the timing bar.
+	receive_inner = MeshInstance3D.new()
+	var inner := TorusMesh.new()
+	inner.inner_radius = 0.975
+	inner.outer_radius = 1.0
+	inner.rings = 40
+	inner.ring_segments = 6
+	receive_inner.mesh = inner
+	_receive_inner_mat = StandardMaterial3D.new()
+	_receive_inner_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_receive_inner_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_receive_inner_mat.albedo_color = Color(1.0, 1.0, 1.0, 0.35)
+	receive_inner.material_override = _receive_inner_mat
+	receive_inner.position.y = 0.072
+	receive_inner.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	receive_marker.add_child(receive_inner)
+
+func set_receive_marker(center: Vector3, radius: float, color: Color = UI.CYAN) -> void:
+	if not receive_marker:
+		return
+	receive_marker.visible = true
+	receive_marker.position = Vector3(center.x, 0.0, center.z)
+	_receive_radius = clampf(radius, 0.4, 3.0)
+	_receive_color = color
+	receive_disc.scale = Vector3(_receive_radius, 1.0, _receive_radius)
+	receive_ring.scale = Vector3(_receive_radius, 1.0, _receive_radius)
+	receive_halo.scale = Vector3(_receive_radius, 1.0, _receive_radius)
+	_receive_disc_mat.albedo_color = Color(color.r, color.g, color.b, 0.18)
+	_receive_ring_mat.albedo_color = Color(
+		lerpf(color.r, 1.0, 0.35), lerpf(color.g, 1.0, 0.35), lerpf(color.b, 1.0, 0.35), 0.95
+	)
+
+## 0 at the serve/hit, 1 at contact. Shrinks the inner ring onto the centre.
+func set_receive_progress(p: float) -> void:
+	_receive_progress = clampf(p, 0.0, 1.0)
+
+func hide_receive_marker() -> void:
+	if receive_marker:
+		receive_marker.visible = false
+		_receive_progress = 0.0
+
+func _process(delta: float) -> void:
+	if receive_marker and receive_marker.visible:
+		_receive_time += delta
+		var pulse := 1.0 + sin(_receive_time * 4.5) * 0.018
+		var r := _receive_radius * pulse
+		receive_disc.scale = Vector3(r, 1.0, r)
+		receive_ring.scale = Vector3(r, 1.0, r)
+		_receive_ring_mat.albedo_color = Color(
+			_receive_color.r, _receive_color.g, _receive_color.b, 0.78 + sin(_receive_time * 4.5) * 0.12
+		)
+		var close := lerpf(0.94, 0.08, pow(_receive_progress, 1.25))
+		receive_inner.scale = Vector3(_receive_radius * close, 1.0, _receive_radius * close)
+		_receive_inner_mat.albedo_color = Color(1.0, 1.0, 1.0, 0.22 + _receive_progress * 0.65)

@@ -17,6 +17,9 @@ var options: Dictionary = {
 }
 var tournament: Dictionary = {}
 var last_match_result: Dictionary = {}
+var starting_lineups: Dictionary = {}
+
+const LINEUP_PATH := "user://starting_lineups.json"
 
 const DIFFICULTY_NAMES := ["VERY EASY", "EASY", "NORMAL", "HARD", "VERY HARD"]
 const DIFFICULTY_MULT := [0.80, 0.90, 1.0, 1.09, 1.18]
@@ -45,6 +48,7 @@ func _ready() -> void:
 		team_order.append(str(k))
 	_load_settings()
 	_load_tournament()
+	_load_lineups()
 
 func team(id: String) -> Dictionary:
 	return teams.get(id, teams["karasuno"])
@@ -74,20 +78,103 @@ func player_name_of(team_id: String, player_id: String) -> String:
 	return "Player"
 
 func starters(team_id: String) -> Array:
+	var by_id := _roster_by_id(team_id)
 	var out: Array = []
-	for p in team(team_id)["players"]:
-		if p["starter"]:
-			out.append(p)
-	while out.size() < 6:
-		out.append(team(team_id)["players"][out.size()])
-	return out.slice(0, 6)
+	for id in lineup_ids(team_id):
+		if by_id.has(id):
+			out.append(by_id[id])
+	return out
 
 func bench(team_id: String) -> Array:
+	var starters := lineup_ids(team_id)
 	var out: Array = []
 	for p in team(team_id)["players"]:
-		if not p["starter"]:
+		if not starters.has(str(p.get("id", ""))):
 			out.append(p)
 	return out
+
+func default_lineup_ids(team_id: String) -> Array[String]:
+	# Liberos sit on the bench for now: the match engine does not yet run the
+	# front-row replacement / serve rules that a libero needs.
+	var non_libero: Array[String] = []
+	var everyone: Array[String] = []
+	for p in team(team_id)["players"]:
+		var pid := str(p.get("id", ""))
+		everyone.append(pid)
+		if str(p.get("role", "")) != "L":
+			non_libero.append(pid)
+	var pool: Array[String] = non_libero if non_libero.size() >= 6 else everyone
+	var out: Array[String] = []
+	for i in range(mini(6, pool.size())):
+		out.append(pool[i])
+	return out
+
+func lineup_ids(team_id: String) -> Array[String]:
+	var by_id := _roster_by_id(team_id)
+	var ids: Array[String] = []
+	if starting_lineups.has(team_id) and starting_lineups[team_id] is Array:
+		for v in starting_lineups[team_id]:
+			ids.append(str(v))
+	if ids.size() != 6:
+		ids = default_lineup_ids(team_id)
+
+	var out: Array[String] = []
+	for id in ids:
+		if not by_id.has(id) or out.has(id):
+			continue
+		if str(by_id[id].get("role", "")) == "L":
+			continue
+		out.append(id)
+	if out.size() < 6:
+		for id in default_lineup_ids(team_id):
+			if out.size() >= 6:
+				break
+			if not out.has(id):
+				out.append(id)
+	return out
+
+func set_lineup(team_id: String, ids: Array) -> bool:
+	if not teams.has(team_id):
+		return false
+	var by_id := _roster_by_id(team_id)
+	var clean: Array[String] = []
+	for v in ids:
+		var id := str(v)
+		if not by_id.has(id) or clean.has(id):
+			continue
+		if str(by_id[id].get("role", "")) == "L":
+			return false
+		clean.append(id)
+	if clean.size() != 6:
+		return false
+	starting_lineups[team_id] = clean
+	save_lineups()
+	return true
+
+func reset_lineup(team_id: String) -> void:
+	starting_lineups.erase(team_id)
+	save_lineups()
+
+func _roster_by_id(team_id: String) -> Dictionary:
+	var out: Dictionary = {}
+	for p in team(team_id)["players"]:
+		out[str(p.get("id", ""))] = p
+	return out
+
+func save_lineups() -> void:
+	var f := FileAccess.open(LINEUP_PATH, FileAccess.WRITE)
+	if f:
+		f.store_string(JSON.stringify(starting_lineups, "\t"))
+
+func _load_lineups() -> void:
+	if not FileAccess.file_exists(LINEUP_PATH):
+		return
+	var f := FileAccess.open(LINEUP_PATH, FileAccess.READ)
+	if not f:
+		return
+	var parsed = JSON.parse_string(f.get_as_text())
+	if parsed is Dictionary:
+		starting_lineups = parsed
 
 func random_commentary(kind: String, player: String = "", team_name: String = "") -> String:
 	var pool: Array = COMMENTARY.get(kind, ["..."])

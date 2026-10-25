@@ -252,7 +252,7 @@ func _start_autotest() -> void:
 		get_tree().quit()
 	)
 	add_child(m)
-	await get_tree().create_timer(720.0).timeout
+	await get_tree().create_timer(1800.0).timeout
 	print("[autotest] timeout — forcing quit")
 	get_tree().quit()
 
@@ -271,6 +271,34 @@ func _tap(action: String, seconds: float = 0.08) -> void:
 	_send_action(action, true)
 	await get_tree().create_timer(seconds).timeout
 	_send_action(action, false)
+
+## Hold the movement keys that walk the active player toward a court position.
+func _steer_to(m, target: Vector3) -> void:
+	if m.active_rig == null:
+		return
+	var d: Vector3 = Vector3(target.x - m.active_rig.global_position.x, 0.0, target.z - m.active_rig.global_position.z)
+	for a in ["move_left", "move_right", "move_forward", "move_back"]:
+		_send_action(a, false)
+	if d.length() < 0.18:
+		return
+	var fwd: Vector3 = -m.camera.global_transform.basis.z
+	fwd.y = 0.0
+	var right: Vector3 = m.camera.global_transform.basis.x
+	right.y = 0.0
+	if fwd.length() < 0.01 or right.length() < 0.01:
+		return
+	fwd = fwd.normalized()
+	right = right.normalized()
+	var vx := d.dot(right)
+	var vy := d.dot(fwd)
+	if vx > 0.18:
+		_send_action("move_right", true)
+	elif vx < -0.18:
+		_send_action("move_left", true)
+	if vy > 0.18:
+		_send_action("move_forward", true)
+	elif vy < -0.18:
+		_send_action("move_back", true)
 
 func _start_matchtest() -> void:
 	print("[matchtest] starting simulated-input match")
@@ -291,6 +319,7 @@ func _start_matchtest() -> void:
 	var tactics_done: bool = false
 	var pause_done: bool = false
 	var attacks: int = 0
+	var receives: int = 0
 	while t < 30.0:
 		await get_tree().create_timer(0.1).timeout
 		t += 0.1
@@ -309,6 +338,26 @@ func _start_matchtest() -> void:
 		if holding:
 			_send_action("action", false)
 			holding = false
+		# New receive system: get under the ball, then press Space inside the
+		# timing window. Poll at frame-ish resolution so we never miss it.
+		var receiving: bool = (ph == "serve_flight" or ph == "attack_flight") \
+			and int(m.rally.get("chaser_side", -1)) == int(m.player_side) \
+			and int(m.rally.get("chaser_slot", -1)) == int(m.active_slot)
+		if receiving:
+			_send_action("sprint", true)
+			var guard := 0
+			while guard < 400 and str(m.phase) == ph and float(m.ball.time_left()) > 0.12 and not bool(m.rally.get("receive_pressed", false)):
+				_steer_to(m, m.ball.end)
+				await get_tree().create_timer(0.01).timeout
+				guard += 1
+				t += 0.01
+			_send_action("sprint", false)
+			for a in ["move_left", "move_right", "move_forward", "move_back"]:
+				_send_action(a, false)
+			if not bool(m.rally.get("receive_pressed", false)):
+				await _tap("action", 0.04)
+				receives += 1
+			continue
 		if not tactics_done and t > 4.0:
 			tactics_done = true
 			await _tap("tactics")
@@ -322,7 +371,16 @@ func _start_matchtest() -> void:
 			await get_tree().create_timer(0.3).timeout
 			m._pause_timeout()
 			await get_tree().create_timer(0.2).timeout
-			m._pause_substitute()
+			var bench_i := -1
+			for i in range(m.teams[0].bench.size()):
+				if str(m.teams[0].bench[i].get("role", "")) != "L":
+					bench_i = i
+					break
+			if bench_i >= 0:
+				m._pause_substitute_custom(0, bench_i)
+			else:
+				m._pause_substitute()
+			print("[matchtest] sub: ", str(m._pause_note), "  subs_left=", int(m.teams[0].subs))
 			await get_tree().create_timer(0.2).timeout
 			await _tap("pause")
 			continue
@@ -344,7 +402,7 @@ func _start_matchtest() -> void:
 			await _tap("special")
 		if randf() < 0.02:
 			await _tap("camera")
-	print("[matchtest] summary phase=", str(m.phase), " score=", int(m.teams[0].score), "-", int(m.teams[1].score), " rallies=", int(m.rally_hits), " attacks=", attacks, " tactics=", tactics_done, " pause=", pause_done)
+	print("[matchtest] summary phase=", str(m.phase), " score=", int(m.teams[0].score), "-", int(m.teams[1].score), " rallies=", int(m.rally_hits), " attacks=", attacks, " receives=", receives, " tactics=", tactics_done, " pause=", pause_done)
 	if int(m.teams[0].score) + int(m.teams[1].score) <= 0:
 		print("[matchtest] FAIL — no points scored on the human path")
 	print("[matchtest] timeout — forcing quit")
@@ -387,6 +445,28 @@ func _start_uitest() -> void:
 	await _ui_frame()
 	show_team_select("exhibition")
 	await _ui_frame()
+	# Exercise the starting-lineup editor end to end, then restore the saved
+	# lineups so a test run never edits the player's real rotation.
+	var saved_lineups: Dictionary = GameData.starting_lineups.duplicate(true)
+	var ts = current_screen
+	var bench_pick := ""
+	for b in GameData.bench("karasuno"):
+		if str(b.get("role", "")) != "L":
+			bench_pick = str(b.get("id", ""))
+			break
+	if ts != null and is_instance_valid(ts) and ts.has_method("_open_lineup_editor") and bench_pick != "":
+		ts.call("_open_lineup_editor", "karasuno")
+		await _ui_frame()
+		ts.call("_on_lineup_starter", 0)
+		await _ui_frame()
+		ts.call("_on_lineup_bench", bench_pick)
+		await _ui_frame()
+		var ids: Array = GameData.lineup_ids("karasuno")
+		print("[uitest] lineup editor ok, bench in six=", ids.has(bench_pick))
+		ts.call("_close_lineup_editor")
+		await _ui_frame()
+	GameData.starting_lineups = saved_lineups
+	GameData.save_lineups()
 	show_team_select("browse")
 	await _ui_frame()
 	show_team_select("tournament")

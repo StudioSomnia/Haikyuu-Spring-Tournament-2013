@@ -29,7 +29,7 @@ You can also open `project.godot` in the Godot editor and press **F5**.
 
 ```bat
 run.bat --autotest     :: full AI-vs-AI match, prints the result dictionary
-run.bat --matchtest    :: human-controlled path with simulated input (serve, spike, block, pause, tactics)
+run.bat --matchtest    :: human-controlled path with simulated input (serve, receive, spike, pause, subs)
 run.bat --uitest       :: walks every menu, starts a tournament, advances a round, opens results
 ```
 
@@ -56,13 +56,25 @@ Each test runs headless, prints `[...]` log lines, and exits by itself.
 ### How a possession plays out
 
 1. **Serve** — hold `Space` to charge, release inside the green band. Pick `FLOAT`, `JUMP`,
-   or `UNDERARM` with `1`–`3` (or on the tactics board).
-2. **Reception** — move to the landing marker. `Ctrl`/`C` dives for balls just out of reach.
+   or `UNDERARM` with `1`–`3` (or on the tactics board). Without a mouse aim the serve still
+   finds a safe zone.
+2. **Reception** — the landing ring shows where the ball will come down. Get the receiver
+   inside the ring, then press `Space` as the ball arrives; a white ring closes on the
+   centre as a second timing cue. The ring size and the timing window scale with that
+   player's **receive** and **speed** stats. `Ctrl`/`C` dives to stretch an extra half
+   metre. A clean receive hangs in the air; a shanked one is flat and forces the setter to
+   scramble.
 3. **Set** — the setter runs the called play. `2`–`5` changes the play call on the fly.
+   Clean passes buy a slower, higher set; poor passes compress the attack.
 4. **Attack** — in `set_flight`, press `Space` near the top of the set (timing bar), aim with
-   the mouse, and press `E` to switch between a **full swing** and a **tip**.
-5. **Block / dig** — press `Space` in the front row to add your own block to the wall; chase
-   the landing spot with your back-row player to dig.
+   the mouse, and press `E` to switch between a **full swing** and a **tip**. If the mouse is
+   not over the opponent's court, the hit is placed automatically.
+5. **Block / dig** — press `Space` in the front row to add your own block to the wall. On
+   defense, the same receive ring appears for spikes: move under it and press `Space`.
+   Hitters aim for the deep corners, so a perfect read still has to move.
+
+The receive ring is the contract: inside it you get a contact, outside it (without a dive)
+the ball hits the floor.
 
 ---
 
@@ -71,7 +83,17 @@ Each test runs headless, prints `[...]` log lines, and exits by itself.
 ### Match rules
 - Rally scoring, sets to **25** (deciding set to **15**), win by 2.
 - Best-of-**1 / 3 / 5** sets (selectable).
-- Six rotations, libero handling, side-out rotation, timeouts and substitutions.
+- Six rotations, side-out rotation, two timeouts and six substitutions per set.
+- **Liberos sit on the bench for now.** The engine does not yet run the front-row
+  replacement and serve restrictions a libero needs, so they are excluded from the
+  starting six and cannot be substituted in.
+
+### Starting lineups
+On the team-select screen press **EDIT LINEUP** for either team. Pick a starter and then a
+bench player to swap them, or pick two starters to exchange their rotation slots (P1–P6).
+The rotation runs clockwise and the server is always the P1 (bottom-right) player.
+Lineups are saved to `user://starting_lineups.json`; **RESET TO DEFAULT** restores the
+original six.
 
 ### Play calls
 `QUICK`, `BACK QUICK`, `WING`, `PIPE`, `DUMP` — each changes the set target, tempo, and how
@@ -107,11 +129,16 @@ school's signature ability for the next three rallies:
 
 ### Player growth inside a match
 Stamina drains with sprinting, jumping, and diving. Tired players move slower and hit
-weaker. Rotate, call timeouts, and use **Substitutions** from the pause menu (bench players
-are picked by role and freshness).
+weaker. Rotate, call timeouts, and use **Substitutions** from the pause menu.
 
 **Timeouts** — two per set, called from the pause screen. They restore stamina across the
-floor and add FLOW. **Substitutions** — six per set, role-aware and bench-limited.
+floor and add FLOW.
+
+**Substitutions** — six per set. Open the pause menu and use the two dropdowns under
+**MAKE A SUBSTITUTION**: the left list is the player coming off, the right list is the
+bench player coming on, then press **SWAP**. Bench players keep their own stamina, and
+tired starters rotate back onto the bench. **AUTO SUB** picks the freshest same-role
+player if you do not want to choose. Liberos are shown on the bench but are not selectable.
 
 ### Difficulty
 Five levels from **VERY EASY** to **VERY HARD** change AI reaction speed, attack accuracy,

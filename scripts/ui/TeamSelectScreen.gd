@@ -19,6 +19,12 @@ var _play_btn: Button
 var _hint: Label
 var _diff_label: Label
 var _sets_label: Label
+var _lineup_layer: Control
+var _lineup_body: VBoxContainer
+var _lineup_hint: Label
+var _lineup_team := ""
+var _lineup_sel_kind := ""
+var _lineup_sel_id := ""
 
 func _ready() -> void:
 	difficulty = int(GameData.options["difficulty"])
@@ -143,7 +149,7 @@ func _build() -> void:
 	content.add_child(detail_scroll)
 	_detail = VBoxContainer.new()
 	_detail.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_detail.add_theme_constant_override("separation", 12)
+	_detail.add_theme_constant_override("separation", 6)
 	detail_scroll.add_child(_detail)
 
 	# Footer ---------------------------------------------------------------
@@ -154,10 +160,74 @@ func _build() -> void:
 	_hint = UI.label("", 14, UI.MUTED)
 	_hint.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	foot.add_child(_hint)
+	var lineup_btn := UI.button("EDIT LINEUP", UI.CYAN, 16, 50)
+	lineup_btn.custom_minimum_size = Vector2(190, 50)
+	lineup_btn.pressed.connect(func(): _open_lineup_editor(viewed))
+	foot.add_child(lineup_btn)
 	_play_btn = UI.button("PLAY MATCH  →", UI.ORANGE, 20, 50)
 	_play_btn.custom_minimum_size = Vector2(260, 50)
 	_play_btn.pressed.connect(_commit)
 	foot.add_child(_play_btn)
+
+	_build_lineup_layer()
+
+func _build_lineup_layer() -> void:
+	_lineup_layer = Control.new()
+	_lineup_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_lineup_layer.visible = false
+	add_child(_lineup_layer)
+
+	var dim := ColorRect.new()
+	dim.color = Color(0.005, 0.008, 0.02, 0.82)
+	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	dim.mouse_filter = Control.MOUSE_FILTER_STOP
+	_lineup_layer.add_child(dim)
+
+	var center := CenterContainer.new()
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_lineup_layer.add_child(center)
+	var panel := UI.panel(Color(0.03, 0.05, 0.095, 0.99), Color(UI.CYAN.r, UI.CYAN.g, UI.CYAN.b, 0.35), 16)
+	panel.custom_minimum_size = Vector2(1040, 620)
+	center.add_child(panel)
+	var outer := VBoxContainer.new()
+	outer.add_theme_constant_override("separation", 10)
+	panel.add_child(outer)
+
+	var head := HBoxContainer.new()
+	head.add_theme_constant_override("separation", 14)
+	outer.add_child(head)
+	var hv := VBoxContainer.new()
+	hv.add_theme_constant_override("separation", 0)
+	head.add_child(hv)
+	hv.add_child(UI.label("STARTING LINEUP", 12, UI.CYAN))
+	hv.add_child(UI.bold("CHOOSE YOUR SIX", 28, UI.TEXT))
+	head.add_child(UI.hspacer())
+	var close_btn := UI.small_button("CLOSE  ✕", UI.MUTED)
+	close_btn.pressed.connect(_close_lineup_editor)
+	head.add_child(close_btn)
+
+	outer.add_child(UI.hline())
+	_lineup_body = VBoxContainer.new()
+	_lineup_body.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_lineup_body.add_theme_constant_override("separation", 10)
+	outer.add_child(_lineup_body)
+	outer.add_child(UI.hline())
+
+	var foot := HBoxContainer.new()
+	foot.add_theme_constant_override("separation", 10)
+	outer.add_child(foot)
+	_lineup_hint = UI.label("Pick a starter, then pick the player who should replace them. Pick two starters to change their rotation order.", 13, UI.MUTED)
+	_lineup_hint.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_lineup_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	foot.add_child(_lineup_hint)
+	var reset_btn := UI.small_button("RESET TO DEFAULT", UI.GOLD)
+	reset_btn.pressed.connect(_reset_lineup_editor)
+	foot.add_child(reset_btn)
+	var done_btn := UI.button("DONE", UI.GREEN, 17, 42)
+	done_btn.custom_minimum_size = Vector2(150, 42)
+	done_btn.pressed.connect(_close_lineup_editor)
+	foot.add_child(done_btn)
 
 func _cycle_difficulty(d: int) -> void:
 	difficulty = clampi(difficulty + d, 0, 4)
@@ -263,7 +333,7 @@ func _build_detail() -> void:
 	var ab := UI.panel(Color(0, 0, 0, 0.28), Color(UI.GOLD.r, UI.GOLD.g, UI.GOLD.b, 0.4), 12)
 	_detail.add_child(ab)
 	var av := VBoxContainer.new()
-	av.add_theme_constant_override("separation", 5)
+	av.add_theme_constant_override("separation", 4)
 	ab.add_child(av)
 	av.add_child(UI.chip("FLOW ABILITY", UI.GOLD, 11))
 	av.add_child(UI.bold(t["ability_name"], 22, UI.GOLD))
@@ -274,7 +344,7 @@ func _build_detail() -> void:
 	var stats := UI.panel(Color(0, 0, 0, 0.22), UI.LINE, 12)
 	_detail.add_child(stats)
 	var sv := VBoxContainer.new()
-	sv.add_theme_constant_override("separation", 5)
+	sv.add_theme_constant_override("separation", 3)
 	stats.add_child(sv)
 	sv.add_child(UI.bold("STARTER AVERAGES", 13, UI.MUTED))
 	var avg := _averages(viewed)
@@ -284,19 +354,12 @@ func _build_detail() -> void:
 	var roster := UI.panel(Color(0, 0, 0, 0.18), UI.LINE, 12)
 	_detail.add_child(roster)
 	var rv := VBoxContainer.new()
-	rv.add_theme_constant_override("separation", 4)
+	rv.add_theme_constant_override("separation", 2)
 	roster.add_child(rv)
 	rv.add_child(UI.bold("STARTING SIX", 13, UI.MUTED))
 	var starters := GameData.starters(viewed)
 	for i in range(starters.size()):
 		rv.add_child(_player_row(starters[i], i + 1, accent))
-	rv.add_child(UI.hline())
-	rv.add_child(UI.bold("BENCH", 12, UI.MUTED))
-	var bench := GameData.bench(viewed)
-	var bench_names: Array = []
-	for p in bench:
-		bench_names.append("#%d %s" % [p["number"], p["name"]])
-	rv.add_child(UI.label(UI.join_names(bench_names), 13, UI.MUTED))
 
 func _averages(id: String) -> Dictionary:
 	var out := {"attack": 0.0, "block": 0.0, "serve": 0.0, "receive": 0.0, "set": 0.0, "speed": 0.0}
@@ -310,7 +373,7 @@ func _averages(id: String) -> Dictionary:
 
 func _player_row(p: Dictionary, pos: int, accent: Color) -> HBoxContainer:
 	var h := HBoxContainer.new()
-	h.add_theme_constant_override("separation", 8)
+	h.add_theme_constant_override("separation", 6)
 	var posl := UI.bold(str(pos), 14, UI.MUTED)
 	posl.custom_minimum_size = Vector2(16, 0)
 	h.add_child(posl)
@@ -330,6 +393,167 @@ func _player_row(p: Dictionary, pos: int, accent: Color) -> HBoxContainer:
 		_: key_stat = "attack"
 	h.add_child(UI.label("%s %d" % [key_stat.to_upper(), p["stats"][key_stat]], 12, UI.MUTED))
 	return h
+
+func _open_lineup_editor(team_id: String) -> void:
+	_lineup_team = team_id
+	_lineup_sel_kind = ""
+	_lineup_sel_id = ""
+	_lineup_layer.visible = true
+	_refresh_lineup_editor()
+	Sfx.play("ui", -12.0, 1.05)
+
+func _close_lineup_editor() -> void:
+	_lineup_layer.visible = false
+	_build_detail()
+	Sfx.play("ui", -12.0, 0.95)
+
+func _refresh_lineup_editor() -> void:
+	if not _lineup_body or _lineup_team == "":
+		return
+	UI.clear(_lineup_body)
+	var t := GameData.team(_lineup_team)
+	var accent := Color.html(str(t["primary"]))
+	var ids := GameData.lineup_ids(_lineup_team)
+	var by_id := {}
+	for p in t["players"]:
+		by_id[str(p.get("id", ""))] = p
+
+	var columns := HBoxContainer.new()
+	columns.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	columns.add_theme_constant_override("separation", 18)
+	_lineup_body.add_child(columns)
+
+	var left := VBoxContainer.new()
+	left.custom_minimum_size = Vector2(500, 0)
+	left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	left.add_theme_constant_override("separation", 5)
+	columns.add_child(left)
+	left.add_child(UI.bold("ON COURT  •  P1 → P6", 13, UI.MUTED))
+	for i in range(ids.size()):
+		var p: Dictionary = by_id.get(ids[i], {})
+		var b := _lineup_button(_lineup_row_text(i + 1, p, true), accent, i)
+		if _lineup_sel_kind == "starter" and _lineup_sel_id == ids[i]:
+			b.add_theme_color_override("font_color", UI.GOLD)
+			b.modulate = Color(1.0, 1.0, 1.0, 1.0)
+		b.pressed.connect(_on_lineup_starter.bind(i))
+		left.add_child(b)
+
+	var right := VBoxContainer.new()
+	right.custom_minimum_size = Vector2(460, 0)
+	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	right.add_theme_constant_override("separation", 5)
+	columns.add_child(right)
+	right.add_child(UI.bold("BENCH  •  AVAILABLE", 13, UI.MUTED))
+	var available := 0
+	for p in t["players"]:
+		var pid := str(p.get("id", ""))
+		if ids.has(pid):
+			continue
+		var is_libero := str(p.get("role", "")) == "L"
+		var b2 := _lineup_button(_lineup_row_text(0, p, false), UI.MUTED if is_libero else accent, -1)
+		if is_libero:
+			b2.disabled = true
+			b2.text = "LIBERO  •  #%d %s  •  BENCH (UNAVAILABLE)" % [int(p.get("number", 0)), str(p.get("name", ""))]
+		else:
+			available += 1
+			if _lineup_sel_kind == "bench" and _lineup_sel_id == pid:
+				b2.add_theme_color_override("font_color", UI.GOLD)
+			b2.pressed.connect(_on_lineup_bench.bind(pid))
+		right.add_child(b2)
+	if available == 0:
+		right.add_child(UI.label("No eligible bench players.", 13, UI.MUTED))
+
+func _lineup_button(text: String, color: Color, _idx: int) -> Button:
+	var b := UI.button(text, color, 14, 42)
+	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	b.custom_minimum_size = Vector2(0, 42)
+	return b
+
+func _lineup_row_text(pos: int, p: Dictionary, starter: bool) -> String:
+	if p.is_empty():
+		return "EMPTY"
+	var prefix := "P%d" % pos if starter else "BENCH"
+	var key := "ATK"
+	var val := int(p.get("stats", {}).get("attack", 0))
+	match str(p.get("role", "")):
+		"S":
+			key = "SET"
+			val = int(p["stats"]["set"])
+		"MB":
+			key = "BLK"
+			val = int(p["stats"]["block"])
+		"L":
+			key = "REC"
+			val = int(p["stats"]["receive"])
+	return "%-5s  #%d  %-15s  %-3s  %s %d" % [prefix, int(p.get("number", 0)), str(p.get("name", "")), str(p.get("role", "")), key, val]
+
+func _on_lineup_starter(index: int) -> void:
+	var ids := GameData.lineup_ids(_lineup_team)
+	if index < 0 or index >= ids.size():
+		return
+	var clicked := ids[index]
+	if _lineup_sel_kind == "":
+		_lineup_sel_kind = "starter"
+		_lineup_sel_id = clicked
+		_lineup_hint.text = "Starter selected. Pick the replacement on the bench, or pick another starter to swap their rotation spots."
+	elif _lineup_sel_kind == "bench":
+		var incoming := _lineup_sel_id
+		if incoming == "":
+			return
+		ids[index] = incoming
+		if GameData.set_lineup(_lineup_team, ids):
+			_lineup_hint.text = "Lineup updated. The new player is now P%d." % (index + 1)
+		else:
+			_lineup_hint.text = "That swap is not valid."
+		_lineup_sel_kind = ""
+		_lineup_sel_id = ""
+	elif _lineup_sel_id == clicked:
+		_lineup_sel_kind = ""
+		_lineup_sel_id = ""
+		_lineup_hint.text = "Selection cleared."
+	else:
+		var other := ids.find(_lineup_sel_id)
+		if other >= 0:
+			ids[other] = clicked
+			ids[index] = _lineup_sel_id
+			if GameData.set_lineup(_lineup_team, ids):
+				_lineup_hint.text = "Rotation order updated: P%d and P%d swapped." % [other + 1, index + 1]
+		_lineup_sel_kind = ""
+		_lineup_sel_id = ""
+	_refresh_lineup_editor()
+	_build_detail()
+
+func _on_lineup_bench(pid: String) -> void:
+	if _lineup_sel_kind == "starter":
+		var ids := GameData.lineup_ids(_lineup_team)
+		var idx := ids.find(_lineup_sel_id)
+		if idx >= 0:
+			ids[idx] = pid
+			if GameData.set_lineup(_lineup_team, ids):
+				_lineup_hint.text = "Lineup updated: the bench player steps into P%d." % (idx + 1)
+			else:
+				_lineup_hint.text = "That swap is not valid."
+			_lineup_sel_kind = ""
+			_lineup_sel_id = ""
+	else:
+		_lineup_sel_kind = "bench"
+		_lineup_sel_id = pid
+		_lineup_hint.text = "Bench player selected. Now pick the starter they should replace, or pick another bench player."
+	_refresh_lineup_editor()
+	_build_detail()
+
+func _reset_lineup_editor() -> void:
+	GameData.reset_lineup(_lineup_team)
+	_lineup_sel_kind = ""
+	_lineup_sel_id = ""
+	_lineup_hint.text = "Default lineup restored. Liberos remain on the bench."
+	_refresh_lineup_editor()
+	_build_detail()
+
+func _input(event: InputEvent) -> void:
+	if _lineup_layer and _lineup_layer.visible and event.is_action_pressed("back"):
+		_close_lineup_editor()
+		get_viewport().set_input_as_handled()
 
 func _commit() -> void:
 	Sfx.play("ui", -10.0, 0.95)

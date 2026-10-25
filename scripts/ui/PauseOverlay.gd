@@ -5,12 +5,14 @@ extends CanvasLayer
 signal resume
 signal tactics
 signal substitute
+signal substitute_custom(slot: int, bench_index: int)
 signal timeout_taken
 signal forfeit
 
 var _body: VBoxContainer
 var _built := false
 var _timeout_btn: Button
+var _title: Label
 
 func _ready() -> void:
 	layer = 31
@@ -47,7 +49,8 @@ func _build() -> void:
 	hv.add_theme_constant_override("separation", 0)
 	head.add_child(hv)
 	hv.add_child(UI.label("MATCH PAUSED  •  SPRING TOURNAMENT 2013", 12, UI.ORANGE))
-	hv.add_child(UI.bold("TIMEOUT", 38, UI.TEXT))
+	_title = UI.bold("PAUSED", 38, UI.TEXT)
+	hv.add_child(_title)
 	head.add_child(UI.hspacer())
 	var resume_btn := UI.button("RESUME  ▶", UI.GREEN, 18, 46)
 	resume_btn.custom_minimum_size = Vector2(190, 46)
@@ -68,7 +71,7 @@ func _build() -> void:
 	tactics_btn.custom_minimum_size = Vector2(190, 46)
 	tactics_btn.pressed.connect(func(): tactics.emit())
 	foot.add_child(tactics_btn)
-	var sub_btn := UI.button("SUBSTITUTE", UI.GOLD, 17, 46)
+	var sub_btn := UI.button("AUTO SUB", UI.GOLD, 17, 46)
 	sub_btn.custom_minimum_size = Vector2(190, 46)
 	sub_btn.pressed.connect(func(): substitute.emit())
 	foot.add_child(sub_btn)
@@ -96,6 +99,7 @@ func _render(data: Dictionary) -> void:
 	if not _built:
 		return
 	UI.clear(_body)
+	_title.text = str(data.get("title", "PAUSED"))
 	var hcolor := data.get("home_color", UI.ORANGE) as Color
 	var acolor := data.get("away_color", UI.RED) as Color
 
@@ -176,6 +180,47 @@ func _render(data: Dictionary) -> void:
 		var bl := UI.label(UI.join_names(names), 12, UI.MUTED)
 		bl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		rv.add_child(bl)
+
+	rv.add_child(UI.hline())
+	var subs_left := int(data.get("subs", 0))
+	rv.add_child(UI.bold("MAKE A SUBSTITUTION  •  %d LEFT" % subs_left, 11, UI.GOLD))
+	var sub_row := HBoxContainer.new()
+	sub_row.add_theme_constant_override("separation", 6)
+	rv.add_child(sub_row)
+	var on_pick := OptionButton.new()
+	on_pick.custom_minimum_size = Vector2(190, 34)
+	on_pick.add_theme_font_size_override("font_size", 12)
+	on_pick.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var on_count := 0
+	for p in lineup:
+		if str(p.get("role", "")) == "L":
+			continue
+		var slot := int(p.get("slot", on_count))
+		on_pick.add_item("P%d  #%d %s (%s)" % [slot + 1, int(p.get("number", 0)), str(p.get("name", "")), str(p.get("role", ""))], slot)
+		on_count += 1
+	sub_row.add_child(on_pick)
+	var bench_pick := OptionButton.new()
+	bench_pick.custom_minimum_size = Vector2(190, 34)
+	bench_pick.add_theme_font_size_override("font_size", 12)
+	bench_pick.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var bench_count := 0
+	for i in range(bench.size()):
+		var bp: Dictionary = bench[i]
+		if str(bp.get("role", "")) == "L":
+			continue
+		bench_pick.add_item("#%d %s (%s)" % [int(bp.get("number", 0)), str(bp.get("name", "")), str(bp.get("role", ""))], i)
+		bench_count += 1
+	sub_row.add_child(bench_pick)
+	var swap_btn := UI.small_button("SWAP", UI.GOLD)
+	swap_btn.custom_minimum_size = Vector2(86, 34)
+	swap_btn.disabled = subs_left <= 0 or on_count == 0 or bench_count == 0
+	swap_btn.pressed.connect(func():
+		if on_pick.get_selected() >= 0 and bench_pick.get_selected() >= 0:
+			substitute_custom.emit(int(on_pick.get_selected_id()), int(bench_pick.get_selected_id()))
+	)
+	sub_row.add_child(swap_btn)
+	if bench_count == 0:
+		rv.add_child(UI.label("Liberos are benched for now. No eligible substitute is available.", 11, UI.MUTED))
 	if _timeout_btn:
 		var remaining := int(data.get("timeouts", 0))
 		_timeout_btn.text = "TIMEOUT (%d)" % remaining
