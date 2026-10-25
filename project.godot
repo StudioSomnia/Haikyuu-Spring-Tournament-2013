@@ -1,0 +1,46 @@
+; Haikyuu: Spring Tournament 2013
+; A modern, code-driven volleyball game built in Godot 4.
+
+config_version=5
+
+[application]
+
+config/name="Haikyuu: Spring Tournament 2013"
+config/description="A modern volleyball game inspired by Haikyuu!! and classic 3D volleyball sims."
+run/main_scene="res://scenes/Main.tscn"
+config/features=PackedStringArray("4.7", "GL Compatibility")
+config/icon="res://icon.svg"
+
+[autoload]
+
+GameData="*res://scripts/GameData.gd"
+Sfx="*res://scripts/Sfx.gd"
+
+[display]
+
+window/size/viewport_width=1600
+window/size/viewport_height=900
+window/size/window_width_override=1600
+window/size/window_height_override=900
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+window/handheld/orientation=1
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+environment/defaults/default_clear_color=Color(0.025, 0.03, 0.065, 1)
+anti_aliasing/quality/msaa_3d=2
+
+[physics]
+
+common/physics_ticks_per_second=60
+
+[gui]
+
+theme/default_font_multichannel_signed_distance_field=true
+
+[audio]
+
+driver/enable_input=false
