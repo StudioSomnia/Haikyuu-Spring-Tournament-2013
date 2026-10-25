@@ -252,7 +252,7 @@ func _build_flow_panel() -> void:
 	grid.add_theme_constant_override("v_separation", 2)
 	v.add_child(grid)
 	play_chip = _chip_row(grid, "PLAY", "WING")
-	serve_chip = _chip_row(grid, "SERVE", "FLOAT")
+	serve_chip = _chip_row(grid, "SERVE", "OVERHAND")
 	block_chip = _chip_row(grid, "BLOCK", "READ")
 	recv_chip = _chip_row(grid, "RECEIVE", "BALANCED")
 	camera_label = UI.label("CAM  DYNAMIC", 10, Color(1, 1, 1, 0.35))
@@ -439,6 +439,10 @@ func set_reticle(pos: Vector2, valid: bool, color: Color) -> void:
 func hide_reticle() -> void:
 	if reticle:
 		reticle.visible = false
+
+func set_reticle_idle(pos: Vector2) -> void:
+	if reticle:
+		reticle.set_idle(pos)
 
 func set_camera(text: String) -> void:
 	if camera_label:

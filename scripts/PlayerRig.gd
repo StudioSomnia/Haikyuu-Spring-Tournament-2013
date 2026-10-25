@@ -37,6 +37,7 @@ var speed := 4.2
 var stamina := 100.0
 var stamina_max := 100.0
 var exhausted := false
+var recover_time := 0.0
 
 var jump_t := 0.0
 var jump_duration := 0.0
@@ -60,6 +61,7 @@ var _leg_l_target := 0.0
 var _leg_r_target := 0.0
 var _body_tilt := 0.0
 var _body_y := 0.0
+var _body_y_smooth := 0.0
 var _celebrate := 0.0
 
 func setup(p: Dictionary, colors: Dictionary, team_side: int) -> void:
@@ -73,7 +75,7 @@ func setup(p: Dictionary, colors: Dictionary, team_side: int) -> void:
 	team_id = str(data.get("team_id", ""))
 	stamina_max = 80.0 + float(data["stats"]["stamina"]) * 0.2
 	stamina = stamina_max
-	speed = 3.5 + float(data["stats"]["speed"]) * 0.016
+	speed = 3.9 + float(data["stats"]["speed"]) * 0.018
 	_build()
 	set_name_plate()
 
@@ -284,8 +286,12 @@ func tick(dt: float, bounds_enabled: bool = true) -> void:
 	exhausted = stamina < stamina_max * 0.18
 	if exhausted:
 		spd *= 0.78
+	if recover_time > 0.0:
+		# Getting up from a dive costs a beat: start slow and ramp back up.
+		recover_time = maxf(0.0, recover_time - dt)
+		spd *= lerpf(0.45, 1.0, 1.0 - clampf(recover_time / 0.9, 0.0, 1.0))
 
-	var accel := 16.0 if desired.length() > 0.01 else 22.0
+	var accel := 20.0 if desired.length() > 0.01 else 22.0
 	velocity = velocity.move_toward(desired * spd, accel * dt)
 	if velocity.length() < 0.02:
 		velocity = Vector3.ZERO
@@ -318,7 +324,9 @@ func _update_jump(dt: float) -> void:
 		jump_offset = 0.0
 
 func jump(height: float, duration: float) -> void:
-	jump_height = height
+	# Cap the leap at half the player's body height. The rig is authored at
+	# BODY_HEIGHT, so no call can send a player "flying" above that.
+	jump_height = minf(height, BODY_HEIGHT * 0.5)
 	jump_duration = duration
 	jump_t = 0.0
 	is_jumping = true
@@ -416,7 +424,8 @@ func _update_animation(dt: float) -> void:
 	leg_l.rotation.x = lerp_angle(leg_l.rotation.x, _leg_l_target, k)
 	leg_r.rotation.x = lerp_angle(leg_r.rotation.x, _leg_r_target, k)
 	body_root.rotation.x = lerpf(body_root.rotation.x, _body_tilt, min(1.0, dt * 12.0))
-	body_root.position.y = lerpf(body_root.position.y, _body_y, min(1.0, dt * 12.0)) + jump_offset
+	_body_y_smooth = lerpf(_body_y_smooth, _body_y, min(1.0, dt * 12.0))
+	body_root.position.y = _body_y_smooth + jump_offset
 	foot_l.rotation.x = leg_l.rotation.x * -0.4
 	foot_r.rotation.x = leg_r.rotation.x * -0.4
 
@@ -427,8 +436,9 @@ func _update_ring(dt: float) -> void:
 
 func start_dive(dir: Vector3) -> void:
 	play_action("dive", 0.42)
-	velocity = dir.normalized() * 7.5
-	global_position += dir.normalized() * 0.2
+	velocity = dir.normalized() * 8.4
+	global_position += dir.normalized() * 0.5
+	recover_time = 0.95
 	stamina = max(0.0, stamina - 3.5)
 
 func reset_for_serve() -> void:
@@ -437,6 +447,7 @@ func reset_for_serve() -> void:
 	has_target = false
 	is_jumping = false
 	jump_offset = 0.0
+	recover_time = 0.0
 	action_name = ""
 	action_duration = 0.0
 	_celebrate = 0.0
@@ -453,8 +464,9 @@ func set_player(p: Dictionary) -> void:
 	is_libero = role == "L"
 	stamina_max = 80.0 + float(data["stats"]["stamina"]) * 0.2
 	stamina = stamina_max
-	speed = 3.5 + float(data["stats"]["speed"]) * 0.016
+	speed = 3.9 + float(data["stats"]["speed"]) * 0.018
 	jump_offset = 0.0
+	recover_time = 0.0
 	is_jumping = false
 	velocity = Vector3.ZERO
 	_build()

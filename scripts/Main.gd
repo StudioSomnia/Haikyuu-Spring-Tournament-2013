@@ -320,11 +320,17 @@ func _start_matchtest() -> void:
 	var pause_done: bool = false
 	var attacks: int = 0
 	var receives: int = 0
+	var serve_key_done := false
+	var def_key_done := false
 	while t < 30.0:
 		await get_tree().create_timer(0.1).timeout
 		t += 0.1
 		var ph := str(m.phase)
 		if ph == "serve" and int(m.serving_side) == int(m.player_side):
+			if not serve_key_done:
+				serve_key_done = true
+				await _tap("num3")
+				print("[matchtest] serve type index=", int(m.teams[0].serve_index), " name=", str(m.SERVE_NAMES[int(m.teams[0].serve_index)]))
 			if not holding:
 				_send_action("action", true)
 				holding = true
@@ -338,6 +344,10 @@ func _start_matchtest() -> void:
 		if holding:
 			_send_action("action", false)
 			holding = false
+		if ph == "attack_flight" and int(m.rally.get("attacking", -1)) != int(m.player_side) and not def_key_done:
+			def_key_done = true
+			await _tap("num2")
+			print("[matchtest] defense index=", int(m.teams[0].block_index), " name=", str(m.BLOCK_NAMES[int(m.teams[0].block_index)]))
 		# New receive system: get under the ball, then press Space inside the
 		# timing window. Poll at frame-ish resolution so we never miss it.
 		var receiving: bool = (ph == "serve_flight" or ph == "attack_flight") \

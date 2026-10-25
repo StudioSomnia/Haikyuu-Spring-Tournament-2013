@@ -6,7 +6,7 @@ signal closed
 signal changed(key: String, index: int)
 
 const PLAYS := ["QUICK", "BACK QUICK", "WING", "PIPE", "DUMP"]
-const SERVES := ["FLOAT", "JUMP", "UNDERARM"]
+const SERVES := ["OVERHAND", "UNDERARM", "JUMP"]
 const BLOCKS := ["READ", "COMMIT", "SPREAD", "TRIPLE"]
 const RECEIVES := ["BALANCED", "PERIMETER", "STACK"]
 
@@ -106,14 +106,14 @@ func _build() -> void:
 	left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	left.add_theme_constant_override("separation", 6)
 	two.add_child(left)
-	_section(left, "SERVE TYPE", SERVES, "serve")
-	left.add_child(UI.label("Float: safe and moving. Jump: power and risk. Underarm: guaranteed in.", 12, UI.MUTED))
+	_section(left, "SERVE TYPE  •  1 — 3", SERVES, "serve")
+	left.add_child(UI.label("Overhand: safe and moving. Underarm: guaranteed in. Jump: power and risk.", 12, UI.MUTED))
 
 	var right := VBoxContainer.new()
 	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	right.add_theme_constant_override("separation", 6)
 	two.add_child(right)
-	_section(right, "BLOCK SCHEME", BLOCKS, "block")
+	_section(right, "BLOCK SCHEME  •  1 — 4", BLOCKS, "block")
 	_block_desc = UI.label(BLOCK_DESC[block_index], 12, UI.MUTED)
 	_block_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	right.add_child(_block_desc)

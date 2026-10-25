@@ -28,7 +28,7 @@ const BACK := [0, 4, 5]
 
 const PLAY_NAMES := ["QUICK", "BACK QUICK", "WING", "PIPE", "DUMP"]
 const PLAY_KEYS := ["quick", "back_quick", "wing", "pipe", "dump"]
-const SERVE_NAMES := ["FLOAT", "JUMP", "UNDERARM"]
+const SERVE_NAMES := ["OVERHAND", "UNDERARM", "JUMP"]
 const BLOCK_NAMES := ["READ", "COMMIT", "SPREAD", "TRIPLE"]
 const RECV_NAMES := ["BALANCED", "PERIMETER", "STACK"]
 
@@ -218,8 +218,8 @@ func _opp(side: int) -> Dictionary:
 
 func _serve_index_for(s: String) -> int:
 	match s:
-		"jump": return 1
-		"underarm": return 2
+		"underarm": return 1
+		"jump": return 2
 		_: return 0
 
 func _block_index_for(s: String) -> int:
@@ -350,13 +350,13 @@ func _receive_radius_for(player: Dictionary, pressure: float = 0.0) -> float:
 	var def := clampf(float(player["stats"]["receive"]) / 100.0, 0.0, 1.0)
 	var spd := clampf(float(player["stats"]["speed"]) / 100.0, 0.0, 1.0)
 	# Serves get a generous, readable circle; a hard-driven spike shrinks it.
-	var radius := 0.62 + pow(def, 1.5) * 0.94 + spd * 0.07
-	radius *= 1.0 - clampf(pressure, 0.0, 0.55)
-	return clampf(radius, 0.58, 1.75)
+	var radius := 0.62 + pow(def, 1.5) * 0.96 + spd * 0.07
+	radius *= 1.0 - clampf(pressure, 0.0, 0.50)
+	return clampf(radius, 0.60, 1.76)
 
 func _receive_window_for(player: Dictionary) -> float:
 	var def := clampf(float(player["stats"]["receive"]) / 100.0, 0.0, 1.0)
-	return 0.10 + pow(def, 1.25) * 0.17
+	return 0.10 + pow(def, 1.25) * 0.19
 
 func _receive_timing_score(time_left: float, player: Dictionary) -> float:
 	var window := _receive_window_for(player)
@@ -385,10 +385,12 @@ func _emergency_touch(player: Dictionary, dist: float, radius: float) -> float:
 		return -1.0
 	var def := clampf(float(player["stats"]["receive"]) / 100.0, 0.0, 1.0)
 	var spd := clampf(float(player["stats"]["speed"]) / 100.0, 0.0, 1.0)
-	var chance := clampf(0.34 - over * 0.16 + def * 0.18 + spd * 0.08, 0.02, 0.62)
+	if over > radius * 0.45:
+		return -1.0
+	var chance := clampf(0.38 - over * 0.14 + def * 0.16 + spd * 0.08, 0.03, 0.62)
 	if _rng.randf() > chance:
 		return -1.0
-	return clampf(0.46 - over * 0.12, 0.10, 0.46)
+	return clampf(0.48 - over * 0.11, 0.10, 0.48)
 
 func _ai_receive_timing(player: Dictionary) -> float:
 	var def := clampf(float(player["stats"]["receive"]) / 100.0, 0.0, 1.0)
@@ -625,7 +627,7 @@ func _serve_release(quality: float, override_target = null) -> void:
 	var out_chance := 0.055
 	match idx:
 		0: out_chance = 0.05
-		1: out_chance = 0.085
+		2: out_chance = 0.085
 		_: out_chance = 0.008
 	out_chance += maxf(0.0, 0.55 - quality) * 0.55
 	out_chance -= serve_stat * 0.04
@@ -646,11 +648,11 @@ func _serve_release(quality: float, override_target = null) -> void:
 		rally.point_override = 1 - serving_side
 		rally.point_reason = "error"
 		rally.point_player = player
-		var start := server.global_position + Vector3(0, 2.1 if idx == 1 else 1.8, 0)
+		var start := server.global_position + Vector3(0, 2.1 if idx == 2 else 1.8, 0)
 		ball.launch(start, Vector3(miss.x, 0.12, miss.z), 1.0, 1.6, "serve", server, serving_side, false)
 		phase = "serve_flight"
 		server.play_action("serve", 0.55)
-		if idx == 1:
+		if idx == 2:
 			server.jump(0.45, 0.82)
 		Sfx.play("serve", -8.0, 0.95)
 		if serving_side == player_side:
@@ -672,11 +674,11 @@ func _serve_release(quality: float, override_target = null) -> void:
 	var start_h := 2.75
 	var dur := 1.32
 	var arc := 1.9
-	if idx == 1:
+	if idx == 2:
 		start_h = 2.95
 		dur = 1.05
 		arc = 2.5
-	elif idx == 2:
+	elif idx == 1:
 		start_h = 1.35
 		dur = 1.55
 		arc = 3.1
@@ -685,7 +687,7 @@ func _serve_release(quality: float, override_target = null) -> void:
 	ball.launch(start, Vector3(target.x, 1.12, target.z), dur, arc, "serve", server, serving_side, true)
 	phase = "serve_flight"
 	server.play_action("serve", 0.55)
-	if idx == 1:
+	if idx == 2:
 		server.jump(0.45, 0.82)
 	var pressure := maxf(0.0, float(rally.serve_quality) - 0.55) * 0.38
 	_set_receive_target(1 - serving_side, int(chaser.slot), pressure, 1 - serving_side == player_side and not autoplay)
@@ -1051,7 +1053,7 @@ func _resolve_serve_arrival(pos: Vector3) -> void:
 	var dist := Vector2(rig.global_position.x - pos.x, rig.global_position.z - pos.z).length()
 	var radius := float(rally.get("recv_radius", _receive_radius_for(player)))
 	if recv_side == player_side and active_rig == rig and dive_clock > 0.0:
-		radius += 0.38
+		radius += 0.62
 	var pressed := bool(rally.get("receive_pressed", false))
 	var human_recv: bool = recv_side == player_side and not autoplay and active_rig == rig
 	if not human_recv:
@@ -1156,7 +1158,7 @@ func _resolve_pass_arrival(pos: Vector3) -> void:
 	if side == player_side and not autoplay:
 		hud.set_prompt("SPACE TO JUMP — TIME IT AT THE TOP", "AIM WITH MOUSE  •  E = TIP  •  1-5 PLAY CALL")
 	else:
-		hud.set_prompt("%s IS ATTACKING" % str(team.data["short"]), "WATCH THE HITTER")
+		hud.set_prompt("%s IS ATTACKING" % str(team.data["short"]), "WATCH THE HITTER  •  1-4 DEFENSE")
 	if side != player_side and not autoplay:
 		hud.commentary("%s runs %s." % [str(team.data["short"]), PLAY_NAMES[play_index]], UI.MUTED, 1.6)
 
@@ -1350,13 +1352,13 @@ func _resolve_set_arrival(pos: Vector3) -> void:
 	var chaser := _receiver_for(def_team, target)
 	rally.chaser_side = 1 - side
 	rally.chaser_slot = int(chaser.slot)
-	rally.def_react = clampf(0.42 - float(def_team.slots[int(chaser.slot)]["stats"]["receive"]) * 0.0022 - float(difficulty) * 0.015, 0.14, 0.40)
-	var pressure := 0.08 + maxf(0.0, quality - 0.35) * 0.50
+	rally.def_react = clampf(0.30 - float(def_team.slots[int(chaser.slot)]["stats"]["receive"]) * 0.0018 - float(difficulty) * 0.014, 0.10, 0.28)
+	var pressure := 0.06 + maxf(0.0, quality - 0.35) * 0.42
 	_set_receive_target(1 - side, int(chaser.slot), pressure, 1 - side == player_side and not autoplay)
 	if 1 - side == player_side and not autoplay:
 		_set_active(1 - side, int(chaser.slot))
 		hud.set_phase("DEFENSE", UI.RED)
-		hud.set_prompt("MOVE INTO THE CIRCLE", "SPACE TO RECEIVE  •  CTRL = DIVE  •  Q = SWITCH")
+		hud.set_prompt("MOVE INTO THE CIRCLE", "SPACE TO RECEIVE  •  CTRL = DIVE  •  1-4 SCHEME")
 
 func _play_attack_bonus(team: Dictionary) -> float:
 	if str(team.ability_kind) == "freak_quick" and int(team.ability_timer) > 0:
@@ -1467,7 +1469,7 @@ func _resolve_attack_arrival(pos: Vector3) -> void:
 	var dist := Vector2(rig.global_position.x - pos.x, rig.global_position.z - pos.z).length()
 	var radius := float(rally.get("recv_radius", _receive_radius_for(player)))
 	if defender == player_side and active_rig == rig and dive_clock > 0.0:
-		radius += 0.38
+		radius += 0.62
 	var pressed := bool(rally.get("receive_pressed", false))
 	var human_recv: bool = defender == player_side and not autoplay and active_rig == rig
 	if not human_recv:
@@ -1673,11 +1675,11 @@ func _update_input(delta: float) -> void:
 		hud.set_camera(GameData.CAMERA_NAMES[camera_mode])
 		Sfx.play("ui", -12.0, 1.0)
 	_update_aim()
+	_update_number_keys()
 	var frozen: bool = phase in ["point", "set_end", "match_end", "intro", "set_intro", "dead"]
 	if frozen:
 		if active_rig:
 			active_rig.set_move_input(Vector2.ZERO)
-		_update_number_keys()
 		return
 	var human := active_side == player_side and not autoplay and active_rig != null
 	if human and active_rig:
@@ -1723,7 +1725,7 @@ func _update_input(delta: float) -> void:
 		if dd.length() < 0.01:
 			dd = Vector3(0, 0, _signf(player_side))
 		active_rig.start_dive(dd)
-		dive_clock = 0.62
+		dive_clock = 0.78
 		Sfx.play("receive", -11.0, 0.85)
 	if phase == "attack_flight" and int(rally.get("defending", -1)) == player_side and human:
 		var chaser_slot := int(rally.get("chaser_slot", -1))
@@ -1764,21 +1766,32 @@ func _update_input(delta: float) -> void:
 				active_rig.jump(0.62, 0.90)
 				active_rig.play_action("spike", 0.62)
 			Sfx.play("ui", -12.0, 1.0 + q2 * 0.25)
-	_update_number_keys()
 
 func _update_number_keys() -> void:
 	if autoplay:
 		return
 	var team: Dictionary = teams[player_side]
+	# 1–3 serve, 1–4 defense, 1–5 attack. Context decides which row the
+	# number keys talk to, so the player never has to open the board mid-rally.
+	var defending: bool = phase in ["serve_flight", "pass_flight", "set_flight", "attack_flight", "block_flight", "free_flight"] \
+		and int(rally.get("attacking", -1)) != player_side
 	for i in range(5):
-		if Input.is_action_just_pressed("num%d" % (i + 1)):
-			if phase == "serve" and serving_side == player_side and i < 3:
-				team.serve_index = i
-			else:
-				team.play_index = i
-			hud.set_tactics(PLAY_NAMES[int(team.play_index)], SERVE_NAMES[int(team.serve_index)], BLOCK_NAMES[int(team.block_index)], RECV_NAMES[int(team.recv_index)])
-			Sfx.play("ui", -12.0, 1.06)
-			return
+		if not Input.is_action_just_pressed("num%d" % (i + 1)):
+			continue
+		if phase == "serve" and serving_side == player_side and i < 3:
+			team.serve_index = i
+			hud.commentary("SERVE: " + SERVE_NAMES[i], UI.CYAN, 1.2)
+		elif defending and i < 4:
+			team.block_index = i
+			hud.commentary("DEFENSE: " + BLOCK_NAMES[i], UI.CYAN, 1.2)
+		elif not defending:
+			team.play_index = i
+			hud.commentary("PLAY: " + PLAY_NAMES[i], UI.CYAN, 1.2)
+		else:
+			continue
+		hud.set_tactics(PLAY_NAMES[int(team.play_index)], SERVE_NAMES[int(team.serve_index)], BLOCK_NAMES[int(team.block_index)], RECV_NAMES[int(team.recv_index)])
+		Sfx.play("ui", -12.0, 1.06)
+		return
 
 func _update_aim() -> void:
 	aim_active = false
@@ -2042,7 +2055,7 @@ func _update_hud(_delta: float) -> void:
 		var rrig: PlayerRig = teams[player_side].rigs[rslot]
 		var radius := float(rally.get("recv_radius", _receive_radius_for(rplayer)))
 		if active_rig == rrig and dive_clock > 0.0:
-			radius += 0.38
+			radius += 0.62
 		var dist := Vector2(rrig.global_position.x - ball.end.x, rrig.global_position.z - ball.end.z).length()
 		var left := ball.time_left()
 		var window := float(rally.get("recv_window", _receive_window_for(rplayer)))
@@ -2058,7 +2071,7 @@ func _update_hud(_delta: float) -> void:
 		court.set_receive_progress(ball.t / maxf(0.05, ball.duration))
 		court.set_zone_grid_visible(false)
 		court.hide_target_cell()
-		hud.hide_reticle()
+		hud.set_reticle_idle(mouse_pos)
 		var dur := maxf(0.05, ball.duration)
 		var progress := clampf(ball.t / dur, 0.0, 1.0)
 		var lo := clampf(1.0 - (0.10 + window * 0.6) / dur, 0.0, 0.95)
@@ -2069,7 +2082,7 @@ func _update_hud(_delta: float) -> void:
 		elif bool(rally.get("receive_pressed", false)):
 			hud.set_prompt("CONTACT LOCKED — STAY IN THE CIRCLE", "GOOD POSITION WINS THE RALLY")
 		elif dist > radius:
-			hud.set_prompt("MOVE INTO THE CIRCLE", "SPACE TO RECEIVE  •  CTRL = DIVE")
+			hud.set_prompt("MOVE INTO THE CIRCLE", "SPACE TO RECEIVE  •  CTRL = DIVE  •  1-4 DEFENSE")
 		elif timing_open:
 			hud.set_prompt("PRESS SPACE NOW", "TIMING + POSITION  •  BETTER DEFENDERS = BIGGER WINDOW")
 		else:
@@ -2090,7 +2103,7 @@ func _update_hud(_delta: float) -> void:
 		court.set_zone_grid_visible(true)
 		court.set_target_cell(aim_point.x, aim_point.z, aim_valid, tint)
 	else:
-		hud.hide_reticle()
+		hud.set_reticle_idle(mouse_pos)
 		court.set_zone_grid_visible(false)
 		court.hide_target_cell()
 

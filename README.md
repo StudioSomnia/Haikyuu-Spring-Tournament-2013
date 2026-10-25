@@ -50,31 +50,35 @@ Each test runs headless, prints `[...]` log lines, and exits by itself.
 | Tactics board (pauses the match) | `Tab` | Back |
 | Pause / stats / substitutions | `Esc` or `P` | Start |
 | Change camera | `V` | RB |
-| Play call / serve type (1–5) | `1`–`5` | — |
+| Serve type (while serving) | `1`–`3` | — |
+| Block scheme (while defending) | `1`–`4` | — |
+| Play call (while attacking) | `1`–`5` | — |
 | Aim | Mouse | — |
 
 ### How a possession plays out
 
-1. **Serve** — hold `Space` to charge, release inside the green band. Pick `FLOAT`, `JUMP`,
-   or `UNDERARM` with `1`–`3` (or on the tactics board). Without a mouse aim the serve still
-   finds a safe zone.
+1. **Serve** — hold `Space` to charge, release inside the green band. Pick **OVERHAND**,
+   **UNDERARM**, or **JUMP** with `1`–`3` (or on the tactics board). Without a mouse aim the
+   serve still finds a safe zone.
 2. **Reception** — the landing ring shows where the ball will come down. Get the receiver
    inside the ring, then press `Space` as the ball arrives; a white ring closes on the
    centre as a second timing cue. The ring size and the timing window scale with that
-   player's **receive** and **speed** stats. `Ctrl`/`C` dives to stretch an extra half
-   metre. A clean receive hangs in the air; a shanked one is flat and forces the setter to
-   scramble.
-3. **Set** — the setter runs the called play. `2`–`5` changes the play call on the fly.
+   player's **receive** and **speed** stats. `Ctrl`/`C` dives for a longer stretch, but the
+   landing leaves you a step slower to recover. A clean receive hangs in the air; a shanked
+   one is flat and forces the setter to scramble.
+3. **Set** — the setter runs the called play. `1`–`5` changes the play call on the fly.
    Clean passes buy a slower, higher set; poor passes compress the attack.
 4. **Attack** — in `set_flight`, press `Space` near the top of the set (timing bar), aim with
    the mouse, and press `E` to switch between a **full swing** and a **tip**. If the mouse is
    not over the opponent's court, the hit is placed automatically.
 5. **Block / dig** — press `Space` in the front row to add your own block to the wall. On
-   defense, the same receive ring appears for spikes: move under it and press `Space`.
-   Hitters aim for the deep corners, so a perfect read still has to move.
+   defense, press `1`–`4` to call **READ**, **COMMIT**, **SPREAD**, or **TRIPLE**, then move
+   under the receive ring and press `Space`. Hitters aim for the deep corners, so a perfect
+   read still has to move.
 
 The receive ring is the contract: inside it you get a contact, outside it (without a dive)
-the ball hits the floor.
+the ball hits the floor. The reticle stays on screen all rally — bright while aiming, dimmed
+with a dark outline while it is just your cursor.
 
 ---
 
@@ -84,6 +88,8 @@ the ball hits the floor.
 - Rally scoring, sets to **25** (deciding set to **15**), win by 2.
 - Best-of-**1 / 3 / 5** sets (selectable).
 - Six rotations, side-out rotation, two timeouts and six substitutions per set.
+- Jump height is capped at **half a player's body height**, so spikes, blocks, and jump
+  serves stay grounded instead of floating.
 - **Liberos sit on the bench for now.** The engine does not yet run the front-row
   replacement and serve restrictions a libero needs, so they are excluded from the
   starting six and cannot be substituted in.
@@ -96,16 +102,18 @@ Lineups are saved to `user://starting_lineups.json`; **RESET TO DEFAULT** restor
 original six.
 
 ### Play calls
-`QUICK`, `BACK QUICK`, `WING`, `PIPE`, `DUMP` — each changes the set target, tempo, and how
-the block reads you. Fast attacks beat slow blocks but demand a clean pass.
+`QUICK`, `BACK QUICK`, `WING`, `PIPE`, `DUMP` — press `1`–`5` while attacking. Each changes
+the set target, tempo, and how the block reads you. Fast attacks beat slow blocks but demand
+a clean pass.
 
 ### Serve types
-`FLOAT` (safe, breaks reception shape), `JUMP` (power and low trajectory), `UNDERARM`
-(high-percentage, easy to receive — useful early).
+Press `1`–`3` while serving: **OVERHAND** (safe, breaks reception shape), **UNDERARM**
+(high-percentage, easy to receive — useful early), **JUMP** (power and low trajectory).
 
 ### Block schemes
-`READ` (balanced two-man), `COMMIT` (one blocker sells out on the middle), `SPREAD` (wide
-wall against pin hitters), `TRIPLE` (three-man roof, vulnerable to tips).
+Press `1`–`4` while defending: **READ** (balanced two-man), **COMMIT** (one blocker sells out
+on the middle), **SPREAD** (wide wall against pin hitters), **TRIPLE** (three-man roof,
+vulnerable to tips).
 
 ### Reception formations
 `BALANCED`, `PERIMETER`, `STACK`.
