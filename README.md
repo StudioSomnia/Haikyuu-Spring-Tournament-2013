@@ -58,22 +58,34 @@ Each test runs headless, prints `[...]` log lines, and exits by itself.
 
 1. **Serve** — hold `Space` to charge, release inside the green band. While you are serving,
    `1`–`3` selects **OVERHAND**, **UNDERARM**, or **JUMP**. `4` and `5` are deliberately
-   inactive in this phase. Without a mouse aim the serve still finds a safe zone.
+   inactive in this phase. Serve skill controls accuracy and the green window; attack skill
+   controls how much power the serve carries.
 2. **Reception** — the team picks the nearest receiver and runs them to the landing ring
    automatically. You only time the contact: press `Space` as the ball arrives. A white ring
-   closes on the centre as a second timing cue. The ring size and the timing window scale
-   with that player's **receive** and **speed** stats. `Ctrl`/`C` dives at the drop point for
-   a longer reach; getting up costs a beat. A clean receive hangs in the air; a shanked one
-   is flat and forces the setter to scramble.
+   closes on the centre as a second timing cue. **Receive** sets the ring size, the timing
+   window, the emergency reach, and how quickly you recover from a dive. `Ctrl`/`C` dives at
+   the drop point for a longer reach. A clean receive hangs in the air; a shanked one is flat
+   and forces the setter to scramble.
 3. **Set** — once your receive is controlled, `1`–`5` opens the attack calls. The setter runs
-   the called play. Clean passes buy a slower, higher set; poor passes compress the attack.
-4. **Attack** — in `set_flight`, press `Space` near the top of the set (timing bar), aim with
-   the mouse, and press `E` to switch between a **full swing** and a **tip**. If the mouse is
-   not over the opponent's court, the hit is placed automatically.
-5. **Block / dig** — while the opponent's attack is live, `1`–`4` calls **READ**, **COMMIT**,
+   the called play. **Set** skill controls set accuracy, the width of the spike's timing
+   window, and how reliably the AI setter runs quick plays.
+4. **Attack** — in `set_flight`, watch the red-yellow-green bar and press `Space` in the
+   green. Aim with the mouse, and press `E` to switch between a **full swing** and a **tip**.
+   **Attack** and **jump** set the spike's power and speed; a strong hitter wins more dice
+   contests against the block. A badly timed press is a weak swing; if you never press in
+   the window, the ball drops for the opponent. If the mouse is not over the opponent's
+   court, the hit is placed automatically.
+5. **Block / dig** — while the opponent has the ball, `1`–`4` calls **READ**, **COMMIT**,
    **SPREAD**, or **TRIPLE**. The front row forms one wall and jumps together; the rest of the
-   team shifts its floor coverage around that wall. The receive ring is still your contact
-   contract: press `Space` as the ball drops, or dive to cover the extra ground.
+   team shifts its floor coverage around that wall. At the net, attack and block are rolled as
+   d6 contests: attack rating + d6 + spike power + jump timing against block rating + d6 + how
+   smothered the shot is + block durability + scheme. **Block** skill widens each blocker's
+   span and increases durability. The receive ring is still your contact contract: press
+   `Space` as the ball drops, or dive to cover the extra ground.
+
+The timing bar is red → yellow → green → yellow → red. The green is the perfect window and
+grows with the relevant stat: serve skill for serves, the setter's set skill for spikes, and
+the receiver's read for contacts.
 
 The number keys are strictly context-locked: **1–3 while serving**, **1–4 throughout the
 opponent's possession**, and **1–5 only after your side has controlled the receive**. A key
@@ -101,22 +113,41 @@ The rotation runs clockwise and the server is always the P1 (bottom-right) playe
 Lineups are saved to `user://starting_lineups.json`; **RESET TO DEFAULT** restores the
 original six.
 
+### Stats at work
+Every action now reads the relevant stat instead of using a fixed success rate:
+- **Serve** — accuracy, serve timing window, and power. Underarm is the safe low-power
+  option; overhand adds more attack stat; jump has the highest ceiling but punishes poor
+  servers with net/long errors.
+- **Attack** — spike speed, block-contest strength, and how badly a dig is rattled.
+- **Block** — wall spacing, individual reach (span), durability, and the block dice.
+- **Set** — set accuracy, spike timing window, and AI play selection.
+- **Receive** — contact circle, timing window, emergency reach, and dive recovery.
+- **Speed** — raw movement speed and how quickly players close on a ball.
+- **Jump** — spike power and timing quality.
+
+At the net, attack and block use a d6 contest. The attacker rolls attack rating + d6 + spike
+power + jump timing; the wall rolls block rating + d6 + how smothered the shot is + durability
++ scheme. A clear block win is a stuff; a close win is a touch that takes sting off the ball;
+an attack win breaks through to the floor defense.
+
 ### Play calls
 `QUICK`, `BACK QUICK`, `WING`, `PIPE`, `DUMP` — press `1`–`5` after your receive. Each
 changes the set target, tempo, and how the block reads you. Fast attacks beat slow blocks but
 demand a clean pass.
 
 ### Serve types
-Press `1`–`3` while serving: **OVERHAND** (safe, breaks reception shape), **UNDERARM**
-(high-percentage, easy to receive — useful early), **JUMP** (power and low trajectory).
-`4`–`5` are inactive during the serve.
+Press `1`–`3` while serving: **UNDERARM** (safest, low power, tiny stat barrier, excellent
+control), **OVERHAND** (more attack stat, more sensitive to serve skill), **JUMP** (highest
+power ceiling, largest serve-skill check — poor servers will net or sail it). `4`–`5` are
+inactive during the serve.
 
 ### Block schemes
-Press `1`–`4` while the opponent's attack is live: **READ** (balanced two-man), **COMMIT**
+Press `1`–`4` while the opponent has the ball: **READ** (balanced two-man), **COMMIT**
 (one blocker sells out on the middle), **SPREAD** (wide wall against pin hitters), **TRIPLE**
 (three-man roof, vulnerable to tips). The block is a single unit — the chosen front-row
-players travel to the net together in a fixed spacing, and the remaining players fan into
-short and deep coverage lanes around the wall.
+players travel to the net together, and the remaining players fan into short and deep
+coverage lanes around the wall. The enemy AI uses the same wall and chooses its scheme from
+your called play, so both sides block with the same logic.
 
 ### Reception formations
 `BALANCED`, `PERIMETER`, `STACK`.

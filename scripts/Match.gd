@@ -363,6 +363,48 @@ func _receive_timing_score(time_left: float, player: Dictionary) -> float:
 	var ideal := 0.10
 	return clampf(1.0 - absf(time_left - ideal) / maxf(0.08, window), 0.0, 1.0)
 
+func _stat_pct(player: Dictionary, key: String) -> float:
+	var stats: Dictionary = player.get("stats", {})
+	return clampf(float(stats.get(key, 50)) / 100.0, 0.0, 1.0)
+
+## Map a 40–100 stat onto the 1–6 scale used by the block/attack dice.
+func _stat_rating(stat: float) -> float:
+	return clampf(1.0 + (stat - 40.0) / 12.0, 1.0, 6.0)
+
+func _serve_timing_window(player: Dictionary) -> Dictionary:
+	var skill := _stat_pct(player, "serve")
+	return {
+		"center": 0.82,
+		"green": 0.035 + skill * 0.055,
+		"yellow": 0.045 + skill * 0.035
+	}
+
+func _spike_timing_window(side: int) -> Dictionary:
+	var team: Dictionary = teams[side]
+	var setter: Dictionary = team.slots[_setter_slot(team)]
+	var skill := _stat_pct(setter, "set")
+	return {
+		"center": 0.55,
+		"green": 0.040 + skill * 0.090,
+		"yellow": 0.050 + skill * 0.050
+	}
+
+func _timing_quality(v: float, win: Dictionary) -> float:
+	var center := float(win["center"])
+	var green := float(win["green"])
+	var yellow := float(win["yellow"])
+	var d := absf(v - center)
+	if d <= green:
+		return lerpf(1.0, 0.86, d / maxf(0.01, green))
+	if d <= green + yellow:
+		return lerpf(0.86, 0.34, (d - green) / maxf(0.01, yellow))
+	return clampf(0.34 - (d - green - yellow) * 1.7, 0.05, 0.34)
+
+func _timing_bounds(win: Dictionary) -> Array:
+	var center := float(win["center"])
+	var green := float(win["green"])
+	return [clampf(center - green, 0.02, 0.98), clampf(center + green, 0.02, 0.98)]
+
 func _contact_quality(team: Dictionary, player: Dictionary, dist: float, radius: float, timing: float, pressed: bool) -> float:
 	if dist > radius * 1.18:
 		return -1.0
@@ -448,11 +490,17 @@ func _block_plan(team: Dictionary, anchor_x: float) -> Dictionary:
 		return absf(_base_pos(side, int(a)).x - anchor_x) < absf(_base_pos(side, int(b)).x - anchor_x)
 	)
 	var slots: Array = pool.slice(0, mini(count, pool.size()))
-	var spacing := 0.92
+	# Better blockers set a wider, stronger wall. Spacing and each blocker's
+	# reach both scale with the block stat, so elite walls cover more floor.
+	var front_block := 0.0
+	for s in FRONT:
+		front_block += _stat_pct(team.slots[s], "block") * 100.0
+	var avg_block := front_block / 3.0
+	var spacing := 0.70 + avg_block * 0.0050
 	if scheme == 2:
-		spacing = 1.14
+		spacing *= 1.18
 	elif scheme == 3:
-		spacing = 0.98
+		spacing *= 0.98
 	var walls := {}
 	if slots.size() == 1:
 		walls[int(slots[0])] = anchor_x
@@ -475,18 +523,26 @@ func _block_plan(team: Dictionary, anchor_x: float) -> Dictionary:
 				3: rel = -1.0
 				_: rel = 0.0
 			walls[int(s)] = anchor_x + rel * spacing * sign
+	var reaches := {}
+	for s in slots:
+		reaches[int(s)] = 0.50 + _stat_pct(team.slots[int(s)], "block") * 0.60
 	for s in walls.keys():
 		walls[s] = clampf(float(walls[s]), -HALF_W + 0.3, HALF_W - 0.3)
-	return {"slots": slots, "walls": walls, "anchor": anchor_x, "count": slots.size()}
+	return {"slots": slots, "walls": walls, "reaches": reaches, "anchor": anchor_x, "count": slots.size()}
 
-func _wall_center(plan: Dictionary) -> float:
+## How smothered an attack crossing is by the wall's effective reach.
+## 1.0 = dead centre of a blocker's span, 0.0 = outside the wall.
+func _block_smother(plan: Dictionary, x: float) -> float:
 	var walls: Dictionary = plan["walls"]
-	if walls.is_empty():
-		return float(plan["anchor"])
-	var total := 0.0
-	for s in walls.keys():
-		total += float(walls[s])
-	return total / maxf(1.0, float(walls.size()))
+	var reaches: Dictionary = plan["reaches"]
+	var best := 0.0
+	for s in plan["slots"]:
+		var bx := float(walls[int(s)])
+		var reach := float(reaches.get(int(s), 0.8))
+		var d := absf(x - bx)
+		if d <= reach:
+			best = maxf(best, 1.0 - d / maxf(0.01, reach))
+	return best
 
 func _is_setter(team: Dictionary, slot: int) -> bool:
 	return slot == _setter_slot(team)
@@ -577,8 +633,12 @@ func _begin_serve() -> void:
 		"pass_quality": 0.9,
 		"set_quality": 0.7,
 		"attack_quality": 0.7,
+		"attack_power": 0.7,
 		"attack_type": "spike",
 		"serve_quality": 0.8,
+		"serve_power": 0.8,
+		"serve_type": 0,
+		"serve_timing": 1.0,
 		"setter_slot": -1,
 		"hitter_slot": -1,
 		"set_target": Vector3.ZERO,
@@ -684,22 +744,39 @@ func _serve_release(quality: float, override_target = null) -> void:
 			0.12,
 			_signf(1 - serving_side) * _rng.randf_range(4.2, 8.2)
 		)
-	var serve_stat := float(player["stats"]["serve"]) / 100.0
-	var power := clampf(quality + serve_stat * 0.12 + _flow_bonus(serving_side, "serve") * 0.25, 0.0, 1.15)
-	var out_chance := 0.055
+	var serve_skill := _stat_pct(player, "serve")
+	var attack_skill := _stat_pct(player, "attack")
+	var timing := _timing_quality(quality, _serve_timing_window(player))
+	var spread := 0.0
 	match idx:
-		0: out_chance = 0.05
-		2: out_chance = 0.085
-		_: out_chance = 0.008
-	out_chance += maxf(0.0, 0.55 - quality) * 0.55
-	out_chance -= serve_stat * 0.04
+		1: spread = 0.16 + (1.0 - serve_skill) * 0.55
+		2: spread = 0.28 + (1.0 - serve_skill) * 1.55
+		_: spread = 0.18 + (1.0 - serve_skill) * 0.95
+	spread *= lerpf(1.35, 0.55, timing)
+	target.x += _rng.randf_range(-spread, spread)
+	target.z += _rng.randf_range(-spread * 0.45, spread * 0.45)
+
+	# Underarm is the control serve: low power and a low stat barrier.
+	# Overhand carries more of the attack stat. Jump serves have the highest
+	# power ceiling and the steepest serve-skill requirement.
+	var power := 0.0
+	match idx:
+		1: power = 0.40 + attack_skill * 0.10 + serve_skill * 0.04 + timing * 0.22
+		2: power = 0.58 + attack_skill * 0.34 + serve_skill * 0.08 + timing * 0.22
+		_: power = 0.48 + attack_skill * 0.24 + serve_skill * 0.10 + timing * 0.22
+	power = clampf(power + _flow_bonus(serving_side, "serve") * 0.18, 0.0, 1.15)
+
+	var out_chance := 0.0
+	match idx:
+		1: out_chance = 0.004 + (1.0 - serve_skill) * 0.018
+		2: out_chance = 0.035 + (1.0 - serve_skill) * 0.36
+		_: out_chance = 0.012 + (1.0 - serve_skill) * 0.10
+	out_chance += (1.0 - timing) * 0.22
 	if serving_side != player_side or autoplay:
-		out_chance += (2 - difficulty) * 0.015
+		out_chance += (2 - difficulty) * 0.012
 	var target_inside := _inside_court(target, 1 - serving_side, 0.0)
-	var error := false
-	if not target_inside and override_target == null:
-		error = true
-	elif _rng.randf() < maxf(0.0, out_chance):
+	var error := not target_inside
+	if not error and _rng.randf() < maxf(0.0, out_chance):
 		error = true
 	if error:
 		var miss := target
@@ -710,6 +787,10 @@ func _serve_release(quality: float, override_target = null) -> void:
 		rally.point_override = 1 - serving_side
 		rally.point_reason = "error"
 		rally.point_player = player
+		rally.serve_power = power
+		rally.serve_quality = clampf(power / 1.15, 0.0, 1.0)
+		rally.serve_type = idx
+		rally.serve_timing = timing
 		var start := server.global_position + Vector3(0, 2.1 if idx == 2 else 1.8, 0)
 		ball.launch(start, Vector3(miss.x, 0.12, miss.z), 1.0, 1.6, "serve", server, serving_side, false)
 		phase = "serve_flight"
@@ -725,7 +806,10 @@ func _serve_release(quality: float, override_target = null) -> void:
 	target.z = recv_sign * clampf(absf(target.z), 0.55, HALF_L - 0.35)
 	if target.z * _signf(1 - serving_side) < 0.0:
 		target.z = _signf(1 - serving_side) * 1.0
+	rally.serve_power = power
 	rally.serve_quality = clampf(power / 1.15, 0.0, 1.0)
+	rally.serve_type = idx
+	rally.serve_timing = timing
 	rally.attacking = serving_side
 	rally.defending = 1 - serving_side
 	rally.landing = target
@@ -751,7 +835,7 @@ func _serve_release(quality: float, override_target = null) -> void:
 	server.play_action("serve", 0.55)
 	if idx == 2:
 		server.jump(0.45, 0.82)
-	var pressure := maxf(0.0, float(rally.serve_quality) - 0.55) * 0.38
+	var pressure := maxf(0.0, float(rally.serve_quality) - 0.48) * 0.55
 	_set_receive_target(1 - serving_side, int(chaser.slot), pressure, 1 - serving_side == player_side and not autoplay)
 	_player_stat(player, "serves", 1)
 	_team_stat(srv, "serves", 1)
@@ -833,8 +917,12 @@ func _ai_serve() -> void:
 	var srv: Dictionary = teams[serving_side]
 	var player: Dictionary = srv.slots[0]
 	var target := _ai_serve_target(srv)
-	var q := 0.66 + _rng.randf() * 0.2 + float(player["stats"]["serve"]) * 0.0008
-	q = clampf(q + (_rng.randf_range(-0.07, 0.07) if difficulty <= 2 else 0.0), 0.35, 0.95)
+	var win := _serve_timing_window(player)
+	var err := lerpf(0.13, 0.025, _stat_pct(player, "serve"))
+	var q := float(win["center"]) + _rng.randf_range(-err, err)
+	if difficulty <= 2:
+		q += _rng.randf_range(-0.035, 0.035)
+	q = clampf(q, 0.05, 0.98)
 	aim_point = target
 	_serve_release(q, target)
 
@@ -1125,6 +1213,11 @@ func _resolve_serve_arrival(pos: Vector3) -> void:
 	if quality < 0.0 and not human_recv:
 		quality = _emergency_touch(player, dist, radius)
 	if quality >= 0.0:
+		# A powerful serve can beat the reception even when it is kept alive.
+		var serve_power := float(rally.get("serve_power", 0.6))
+		var receive_skill := _stat_pct(player, "receive")
+		quality = clampf(quality - maxf(0.0, serve_power - receive_skill) * 0.35, 0.05, 1.0)
+	if quality >= 0.0:
 		rally.receive_quality = quality
 		_player_stat(player, "receptions", 1)
 		_team_stat(team, "receptions", 1)
@@ -1202,6 +1295,9 @@ func _resolve_pass_arrival(pos: Vector3) -> void:
 	else:
 		play_index = _ai_choose_play(team, quality)
 	team.play_index = play_index
+	var def_team: Dictionary = teams[1 - side]
+	if 1 - side != player_side or autoplay:
+		_ai_choose_block(def_team, team, quality)
 	var key: String = PLAY_KEYS[play_index]
 	var info := _choose_set_target(team, key, setter, quality)
 	rally.hitter_slot = int(info.slot)
@@ -1290,6 +1386,15 @@ func _choose_set_target(team: Dictionary, key: String, setter_slot: int, quality
 	# hitter time to read the block. A poor pass forces a rushed, flat set.
 	dur *= lerpf(0.80, 1.08, q)
 	arc *= lerpf(0.70, 1.14, q)
+	# Set accuracy is its own stat check: weak setters drift under pressure.
+	var setter_skill := _stat_pct(team.slots[setter_slot], "set")
+	var err := (1.0 - setter_skill) * 0.55 + (1.0 - q) * 0.50
+	if key in ["quick", "back_quick", "dump"]:
+		err *= 0.55
+	x += _rng.randf_range(-err, err)
+	var z_local := absf(z) + _rng.randf_range(-err * 0.35, err * 0.35)
+	x = clampf(x, -HALF_W + 0.55, HALF_W - 0.55)
+	z = sign * clampf(z_local, 0.9, 4.9)
 	return {"slot": slot, "target": Vector3(x, height, z), "duration": dur, "arc": arc}
 
 func _choose_wing(team: Dictionary) -> Dictionary:
@@ -1335,6 +1440,13 @@ func _ai_choose_play(team: Dictionary, quality: float) -> int:
 	}
 	if str(team.ability_kind) == "freak_quick" and int(team.ability_timer) > 0:
 		weights["quick"] = 0.58
+	var setter_slot := _setter_slot(team)
+	var set_skill := _stat_pct(team.slots[setter_slot], "set")
+	var set_iq := _stat_pct(team.slots[setter_slot], "iq")
+	weights["quick"] = float(weights["quick"]) * (0.40 + set_skill * 1.15)
+	weights["back_quick"] = float(weights["back_quick"]) * (0.50 + set_skill * 0.80)
+	weights["dump"] = float(weights["dump"]) * (0.40 + set_iq * 1.10)
+	weights["wing"] = float(weights["wing"]) * (1.10 - set_skill * 0.15)
 	var total := 0.0
 	var pool: Array = []
 	for key in allowed:
@@ -1355,6 +1467,54 @@ func _ai_choose_play(team: Dictionary, quality: float) -> int:
 			return maxi(0, PLAY_KEYS.find(str(item.key)))
 	return maxi(0, PLAY_KEYS.find(str(pool[pool.size() - 1].key)))
 
+## The AI reads the opponent's called play and picks a wall. It is deliberately
+## biased toward two- and three-man groups so the enemy blocks like the player's
+## team instead of constantly selling out on a single blocker.
+func _ai_choose_block(def_team: Dictionary, atk_team: Dictionary, quality: float) -> void:
+	var play: String = str(PLAY_KEYS[clampi(int(atk_team.play_index), 0, PLAY_KEYS.size() - 1)])
+	var w := [0.42, 0.04, 0.36, 0.18]
+	match play:
+		"quick": w = [0.46, 0.10, 0.22, 0.22]
+		"back_quick": w = [0.44, 0.08, 0.24, 0.24]
+		"wing": w = [0.32, 0.03, 0.50, 0.15]
+		"pipe": w = [0.40, 0.04, 0.22, 0.34]
+		"dump": w = [0.62, 0.02, 0.28, 0.08]
+	var pb: Dictionary = def_team.data.get("playbook", {})
+	match str(pb.get("block", "read")):
+		"triple":
+			w[3] += 0.20
+			w[0] -= 0.06
+		"spread":
+			w[2] += 0.18
+			w[0] -= 0.05
+		"commit":
+			w[1] += 0.08
+			w[0] -= 0.04
+	match str(def_team.ability_kind):
+		"iron_wall":
+			w[3] += 0.16
+			w[0] -= 0.04
+		"total_defense":
+			w[0] += 0.06
+			w[3] += 0.08
+	if quality < 0.45:
+		# A poor opponent pass limits their options; stay home and read.
+		w[0] += 0.10
+		w[3] -= 0.04
+	for i in range(w.size()):
+		w[i] = maxf(0.02, float(w[i]))
+	var total := 0.0
+	for v in w:
+		total += float(v)
+	var roll := _rng.randf() * total
+	var acc := 0.0
+	for i in range(w.size()):
+		acc += float(w[i])
+		if roll <= acc:
+			def_team.block_index = i
+			return
+	def_team.block_index = 0
+
 # ---------------------------------------------------------------------------
 # Attack, block, defense, and scoring
 # ---------------------------------------------------------------------------
@@ -1374,11 +1534,23 @@ func _resolve_set_arrival(pos: Vector3) -> void:
 		jq = float(rally.get("jump_quality", 0.6))
 	elif side != player_side or autoplay:
 		jq = 0.72 + float(difficulty) * 0.018
-	var atk := float(player["stats"]["attack"]) / 100.0
+	if side == player_side and not autoplay and not bool(rally.get("jump_pressed", false)):
+		# The human missed the spike timing window entirely: the ball drops.
+		hud.commentary("Mistimed swing — the ball drops.", UI.RED, 2.2)
+		_launch_dead(pos, 1 - side, "error", player)
+		return
+	rally.jump_quality = jq
+	var atk := _stat_pct(player, "attack")
+	var jump_skill := _stat_pct(player, "jump")
 	var quality := clampf(
 		float(rally.set_quality) * 0.42 + atk * 0.38 + jq * 0.25
 		+ _flow_bonus(side, "attack") + _play_attack_bonus(team),
 		0.1, 1.0
+	)
+	var attack_power := clampf(
+		atk * 0.52 + jump_skill * 0.12 + jq * 0.22
+		+ float(rally.set_quality) * 0.14 + _flow_bonus(side, "attack") * 0.5,
+		0.0, 1.0
 	)
 	if not rig.is_jumping:
 		rig.jump(0.62, 0.90)
@@ -1394,15 +1566,18 @@ func _resolve_set_arrival(pos: Vector3) -> void:
 	var arc := 0.3
 	if tip:
 		quality *= 0.82
+		attack_power *= 0.58
 		dur = 0.8
 		arc = 0.72
 	else:
 		var dist := (pos - target).length()
 		# A driven spike gets on the defense quickly; this is what turns
 		# good placement into kills now that receivers move automatically.
-		dur = clampf(0.30 + dist * 0.007, 0.32, 0.42)
+		var base_dur := clampf(0.30 + dist * 0.007, 0.32, 0.42)
+		dur = clampf(base_dur * lerpf(1.10, 0.86, attack_power), 0.28, 0.46)
 		arc = 0.28
 	rally.attack_quality = quality
+	rally.attack_power = attack_power
 	rally.attack_target = target
 	rally.net_checked = false
 	rally.block_jumped = false
@@ -1482,29 +1657,41 @@ func _try_block() -> void:
 	var chosen: Array = plan["slots"]
 	if chosen.is_empty():
 		return
+	var smother := _block_smother(plan, pos.x)
+	if smother <= 0.02:
+		return
 	var scheme := int(team.block_index)
-	var mult := 1.0
-	match scheme:
-		1: mult = 1.1
-		2: mult = 0.97
-		3: mult = 1.06
 	var block_sum := 0.0
 	for s in chosen:
 		block_sum += float(team.slots[int(s)]["stats"]["block"])
-	var block_score := (block_sum / maxf(1.0, float(chosen.size()))) / 100.0 * mult
-	block_score *= 1.0 + float(chosen.size() - 1) * 0.045
-	block_score += _flow_bonus(def_side, "block")
+	var block_avg := block_sum / maxf(1.0, float(chosen.size()))
+	var atk_slot := int(rally.get("hitter_slot", -1))
+	var atk_player: Dictionary = _player_in_slot(int(rally.attacking), atk_slot)
+	var atk_rating := _stat_rating(_stat_pct(atk_player, "attack") * 100.0)
+	var atk_power := float(rally.get("attack_power", rally.get("attack_quality", 0.6)))
+	var attack_roll := _rng.randi_range(1, 6)
+	# Attack dice: stat rating + d6 + spike power + jump timing.
+	var attack_total := atk_rating + float(attack_roll) + atk_power * 2.0 + float(rally.get("jump_quality", 0.6)) * 0.8
+	var block_rating := _stat_rating(block_avg)
+	var durability := block_avg / 100.0 * 0.8
+	var scheme_bonus := 0.25
+	match scheme:
+		1: scheme_bonus = 0.50
+		2: scheme_bonus = 0.10
+		3: scheme_bonus = 0.40
+	var block_roll := _rng.randi_range(1, 6)
+	# Block dice: stat rating + d6 + how smothered the shot is + durability +
+	# scheme + team bonuses. Attack wins ties/near-ties and breaks through.
+	var block_total := block_rating + float(block_roll) + smother * 1.8 + durability + scheme_bonus
+	block_total += _flow_bonus(def_side, "block") * 0.8
+	block_total += float(rally.get("player_block_bonus", 0.0)) * 4.0
+	block_total += float(chosen.size() - 1) * 0.15
 	if str(team.ability_kind) == "twin_decoy" and int(team.ability_timer) > 0:
-		block_score -= 0.1
-	# A wall that is not actually in front of the attack cannot stuff it.
-	var gap := absf(_wall_center(plan) - pos.x)
-	var geometry := clampf(1.12 - gap * 0.16, 0.45, 1.0)
-	var attack_score := float(rally.attack_quality)
-	var chance := (0.08 + (block_score - attack_score) * 0.62 + float(chosen.size()) * 0.04 + float(rally.get("player_block_bonus", 0.0))) * geometry
-	chance = clampf(chance, 0.01, 0.62)
+		block_total -= 0.5
 	if str(rally.attack_type) == "tip":
-		chance *= 0.28
-	if _rng.randf() < chance:
+		block_total -= 2.4
+	var stuff := block_total > attack_total + 1.70
+	if stuff:
 		var best_slot: int = chosen[0]
 		var blocker: PlayerRig = team.rigs[best_slot]
 		rally.block_winner = def_side
@@ -1522,6 +1709,9 @@ func _try_block() -> void:
 		hud.flash(Color(1, 0.85, 0.35, 0.18))
 		hud.set_phase("BLOCK", UI.GOLD)
 		hud.set_prompt("ROOFED!", "THE WALL HOLDS")
+	elif block_total > attack_total - 0.45:
+		# A near-stop takes some sting off the spike.
+		rally.attack_power = maxf(0.2, atk_power - 0.12)
 
 func _resolve_attack_arrival(pos: Vector3) -> void:
 	if phase != "attack_flight":
@@ -1560,7 +1750,7 @@ func _resolve_attack_arrival(pos: Vector3) -> void:
 	if quality >= 0.0:
 		# A driven spike can be kept alive, but it rarely comes back as a
 		# clean pass. The harder the hit, the scrappier the dig.
-		var dig_cap := 0.94 - float(rally.get("attack_quality", 0.6)) * 0.38
+		var dig_cap := 0.98 - float(rally.get("attack_power", rally.get("attack_quality", 0.6))) * 0.42
 		quality = minf(quality, clampf(dig_cap, 0.45, 0.90))
 		rally.receive_quality = quality
 		_player_stat(player, "digs", 1)
@@ -1795,7 +1985,10 @@ func _update_input(delta: float) -> void:
 			dd.y = 0.0
 		if dd.length() < 0.01:
 			dd = Vector3(0, 0, _signf(player_side))
-		active_rig.start_dive(dd)
+		var diver: Dictionary = teams[player_side].slots[clampi(active_slot, 0, 5)]
+		var recovery := lerpf(1.15, 0.55, _stat_pct(diver, "receive"))
+		recovery *= lerpf(1.06, 0.94, _stat_pct(diver, "speed"))
+		active_rig.start_dive(dd, recovery)
 		dive_clock = 0.78
 		Sfx.play("receive", -11.0, 0.85)
 	if phase == "attack_flight" and int(rally.get("defending", -1)) == player_side and human:
@@ -1833,7 +2026,7 @@ func _update_input(delta: float) -> void:
 			var u := 0.55
 			if ball.active:
 				u = clampf(ball.t / maxf(0.05, ball.duration), 0.0, 1.0)
-			var q2 := clampf(1.0 - absf(u - 0.55) * 2.35, 0.12, 1.0)
+			var q2 := _timing_quality(u, _spike_timing_window(player_side))
 			rally.jump_pressed = true
 			rally.jump_quality = q2
 			rally.timing_value = u
@@ -2243,10 +2436,15 @@ func _update_hud(_delta: float) -> void:
 		return
 
 	if phase == "serve" and serving_side == player_side:
-		hud.set_power(serve_charge if serving_hold else 0.0, 0.72, 0.92, "SERVE POWER  —  HOLD SPACE, RELEASE IN THE GREEN", UI.ORANGE, true)
+		var server: Dictionary = teams[player_side].slots[0]
+		var win := _serve_timing_window(server)
+		var b := _timing_bounds(win)
+		hud.set_power(serve_charge if serving_hold else 0.0, float(b[0]), float(b[1]), "SERVE TIMING  —  RELEASE IN THE GREEN", UI.ORANGE, true, float(win["yellow"]))
 	elif phase == "set_flight" and int(rally.get("attacking", -1)) == player_side and ball.active:
 		var u := clampf(ball.t / maxf(0.05, ball.duration), 0.0, 1.0)
-		hud.set_power(u, 0.42, 0.7, "JUMP TIMING  —  SPACE AT THE TOP OF THE SET", UI.CYAN, true)
+		var win := _spike_timing_window(player_side)
+		var b := _timing_bounds(win)
+		hud.set_power(u, float(b[0]), float(b[1]), "SPIKE TIMING  —  PRESS SPACE IN THE GREEN", UI.CYAN, true, float(win["yellow"]))
 	else:
 		hud.clear_power()
 

@@ -1,8 +1,8 @@
 class_name MatchHUD
 extends CanvasLayer
 
-## Broadcast-style match overlay: scoreboard, player card, prompts, flow,
-## tactics readout, commentary, reticle, and charge bar.
+## Broadcast-style match overlay: scoreboard, player card, timing bar, flow,
+## tactics readout, commentary, and reticle.
 
 const ReticleScript := preload("res://scripts/ui/Reticle.gd")
 const PowerBarScript := preload("res://scripts/ui/PowerBar.gd")
@@ -20,8 +20,6 @@ var sets_away: Label
 var set_label: Label
 var serve_home: Label
 var serve_away: Label
-var phase_label: Label
-var prompt_label: Label
 var commentary_label: Label
 var player_name: Label
 var player_meta: Label
@@ -41,7 +39,6 @@ var banner_sub: Label
 var banner_box: VBoxContainer
 var power: Control
 var reticle: Control
-var hint: Label
 var _banner_tween: Tween
 var _comment_tween: Tween
 var _flash: ColorRect
@@ -69,7 +66,6 @@ func _build() -> void:
 	_build_scoreboard()
 	_build_player_card()
 	_build_flow_panel()
-	_build_prompt()
 	_build_banner()
 	_build_commentary()
 	_build_top_corners()
@@ -82,8 +78,8 @@ func _build() -> void:
 	power.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
 	power.offset_left = -280
 	power.offset_right = 280
-	power.offset_top = -98
-	power.offset_bottom = -60
+	power.offset_top = -152
+	power.offset_bottom = -114
 	root.add_child(power)
 
 func _ignore(c: Control) -> void:
@@ -265,39 +261,6 @@ func _chip_row(grid: Control, key: String, value: String) -> Label:
 	grid.add_child(l)
 	return l
 
-func _build_prompt() -> void:
-	var p := PanelContainer.new()
-	p.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
-	p.offset_left = -300
-	p.offset_right = 300
-	p.offset_top = -196
-	p.offset_bottom = -110
-	_ignore(p)
-	var s := StyleBoxFlat.new()
-	s.bg_color = Color(0.025, 0.035, 0.065, 0.80)
-	s.corner_radius_top_left = 12
-	s.corner_radius_top_right = 12
-	s.corner_radius_bottom_left = 12
-	s.corner_radius_bottom_right = 12
-	s.content_margin_left = 18
-	s.content_margin_top = 7
-	s.content_margin_right = 18
-	s.content_margin_bottom = 7
-	p.add_theme_stylebox_override("panel", s)
-	root.add_child(p)
-	var v := VBoxContainer.new()
-	v.add_theme_constant_override("separation", 0)
-	p.add_child(v)
-	phase_label = UI.bold("SERVE", 13, UI.ORANGE)
-	phase_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	v.add_child(phase_label)
-	prompt_label = UI.bold("HOLD SPACE TO SERVE", 20, UI.TEXT)
-	prompt_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	v.add_child(prompt_label)
-	hint = UI.label("AUTO POSITIONING  •  SPACE RECEIVE / JUMP  •  CTRL DIVE  •  TAB TACTICS", 10, Color(1, 1, 1, 0.42))
-	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	v.add_child(hint)
-
 func _build_banner() -> void:
 	banner_box = VBoxContainer.new()
 	banner_box.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
@@ -377,16 +340,13 @@ func _dots(won: int, total: int) -> String:
 		out.append("●" if i < won else "○")
 	return "  ".join(out)
 
-func set_phase(text: String, color: Color = UI.ORANGE) -> void:
-	if phase_label:
-		phase_label.text = text
-		phase_label.add_theme_color_override("font_color", color)
+func set_phase(_text: String, _color: Color = UI.ORANGE) -> void:
+	# The old bottom-centre prompt panel was removed; the timing-bar caption
+	# and commentary carry the phase now.
+	pass
 
-func set_prompt(text: String, sub: String = "") -> void:
-	if prompt_label:
-		prompt_label.text = text
-	if hint and sub != "":
-		hint.text = sub
+func set_prompt(_text: String, _sub: String = "") -> void:
+	pass
 
 func set_player_info(p: Dictionary, current_stamina: float, role_override: String = "") -> void:
 	if not player_name:
@@ -424,9 +384,9 @@ func set_tactics(play: String, serve: String, block: String, receive: String) ->
 	if recv_chip:
 		recv_chip.text = receive
 
-func set_power(v: float, lo: float, hi: float, caption: String, color: Color, show_it: bool = true) -> void:
+func set_power(v: float, lo: float, hi: float, caption: String, color: Color, show_it: bool = true, yellow_pad: float = 0.06) -> void:
 	if power:
-		power.setup(v, lo, hi, caption, color, show_it)
+		power.setup(v, lo, hi, caption, color, show_it, yellow_pad)
 
 func clear_power() -> void:
 	if power:

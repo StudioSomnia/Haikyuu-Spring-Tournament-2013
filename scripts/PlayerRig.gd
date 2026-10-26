@@ -77,7 +77,7 @@ func setup(p: Dictionary, colors: Dictionary, team_side: int) -> void:
 	team_id = str(data.get("team_id", ""))
 	stamina_max = 80.0 + float(data["stats"]["stamina"]) * 0.2
 	stamina = stamina_max
-	speed = 3.9 + float(data["stats"]["speed"]) * 0.018
+	speed = 3.3 + float(data["stats"]["speed"]) * 0.030
 	_build()
 	set_name_plate()
 
@@ -445,7 +445,7 @@ func _update_ring(dt: float) -> void:
 		ring.rotation.z += dt * 1.4
 		ring.position.y = 0.015 + sin(anim_time * 4.0) * 0.01
 
-func start_dive(dir: Vector3) -> void:
+func start_dive(dir: Vector3, recovery: float = 0.95) -> void:
 	play_action("dive", 0.42)
 	var d := dir
 	d.y = 0.0
@@ -456,7 +456,7 @@ func start_dive(dir: Vector3) -> void:
 	global_position += d * 0.28
 	dive_time = 0.42
 	has_target = false
-	recover_time = 0.95
+	recover_time = recovery
 	stamina = max(0.0, stamina - 3.5)
 
 func reset_for_serve() -> void:
@@ -484,7 +484,7 @@ func set_player(p: Dictionary) -> void:
 	is_libero = role == "L"
 	stamina_max = 80.0 + float(data["stats"]["stamina"]) * 0.2
 	stamina = stamina_max
-	speed = 3.9 + float(data["stats"]["speed"]) * 0.018
+	speed = 3.3 + float(data["stats"]["speed"]) * 0.030
 	jump_offset = 0.0
 	dive_time = 0.0
 	recover_time = 0.0

@@ -1,10 +1,13 @@
 extends Control
 
-## Context bar for charge power and contact timing.
+## Timing / charge bar with a five-band readout:
+## red → yellow → green → yellow → red. The green range is the sweet spot;
+## better stats widen the green and yellow bands.
 
 var value := 0.0
 var lo := 0.70
 var hi := 0.88
+var yellow := 0.06
 var caption := ""
 var bar_color := Color("#ff7a1a")
 var visible_bar := false
@@ -14,10 +17,11 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	custom_minimum_size = Vector2(560, 38)
 
-func setup(v: float, sweet_lo: float, sweet_hi: float, cap: String, color: Color, show_it: bool) -> void:
+func setup(v: float, sweet_lo: float, sweet_hi: float, cap: String, color: Color, show_it: bool, yellow_pad: float = 0.06) -> void:
 	value = clampf(v, 0.0, 1.0)
-	lo = sweet_lo
-	hi = sweet_hi
+	lo = clampf(sweet_lo, 0.01, 0.98)
+	hi = clampf(sweet_hi, lo + 0.005, 0.99)
+	yellow = clampf(yellow_pad, 0.0, 0.45)
 	caption = cap
 	bar_color = color
 	visible_bar = show_it
@@ -42,29 +46,36 @@ func _draw() -> void:
 	var h := 12.0
 	var y := s.y - h - 2.0
 	var bg := Rect2(Vector2(0, y), Vector2(w, h))
-	draw_rect(bg, Color(0, 0, 0, 0.55))
-	# Sweet spot.
-	var sx := lo * w
-	var sw := maxf(2.0, (hi - lo) * w)
-	draw_rect(Rect2(Vector2(sx, y), Vector2(sw, h)), Color(0.32, 0.90, 0.55, 0.45))
-	# Fill.
-	var fw := value * w
-	if fw > 0.0:
-		var c := bar_color
-		if value >= lo and value <= hi:
-			c = Color("#52d68a")
-		elif value > hi:
-			c = Color("#ff5d6c")
-		draw_rect(Rect2(Vector2(0, y), Vector2(fw, h)), Color(c.r, c.g, c.b, 0.92))
+	var ylo := maxf(0.0, lo - yellow)
+	var yhi := minf(1.0, hi + yellow)
+
+	# Red base, then the two yellow shoulders and the green sweet spot.
+	draw_rect(bg, Color("#5c141b"))
+	draw_rect(Rect2(Vector2(ylo * w, y), Vector2(maxf(0.0, (lo - ylo)) * w, h)), Color("#d9a72e"))
+	draw_rect(Rect2(Vector2(hi * w, y), Vector2(maxf(0.0, (yhi - hi)) * w, h)), Color("#d9a72e"))
+	draw_rect(Rect2(Vector2(lo * w, y), Vector2(maxf(2.0, (hi - lo) * w), h)), Color("#42c46e"))
+
+	# A subtle travelled fill so the bar still reads as a charge meter.
+	if value > 0.0:
+		draw_rect(Rect2(Vector2(0, y), Vector2(value * w, h)), Color(1, 1, 1, 0.08))
+
 	# Border.
-	draw_rect(bg, Color(1, 1, 1, 0.22), false, 1.0)
-	# Marker.
+	draw_rect(bg, Color(1, 1, 1, 0.24), false, 1.0)
+
+	# Marker: white in the green, gold in the yellow, red outside.
 	var mx := value * w
-	draw_line(Vector2(mx, y - 5), Vector2(mx, y + h + 5), Color(1, 1, 1, 0.95), 2.0)
+	var mc := Color("#ff5d6c")
+	if value >= lo and value <= hi:
+		mc = Color("#f4f8ff")
+	elif value >= ylo and value <= yhi:
+		mc = Color("#ffd45e")
+	draw_line(Vector2(mx, y - 6), Vector2(mx, y + h + 6), Color(0, 0, 0, 0.78), 5.0)
+	draw_line(Vector2(mx, y - 6), Vector2(mx, y + h + 6), mc, 2.0)
 	if _flash > 0.0:
-		draw_arc(Vector2(mx, y + h * 0.5), 12.0, 0, TAU, 20, Color(1, 1, 1, _flash * 0.5), 2.0, true)
+		draw_arc(Vector2(mx, y + h * 0.5), 12.0, 0, TAU, 20, Color(mc.r, mc.g, mc.b, _flash * 0.6), 2.0, true)
+
 	# Caption.
 	if caption != "":
 		var f := ThemeDB.fallback_font
-		draw_string(f, Vector2(2, y - 9), caption, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.9, 0.93, 1.0, 0.9))
-		draw_string(f, Vector2(w - 110, y - 9), "SWEET SPOT", HORIZONTAL_ALIGNMENT_LEFT, 110, 11, Color(0.5, 0.95, 0.7, 0.8))
+		draw_string(f, Vector2(2, y - 9), caption, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.9, 0.93, 1.0, 0.92))
+		draw_string(f, Vector2(w - 150, y - 9), "GREEN = PERFECT", HORIZONTAL_ALIGNMENT_RIGHT, 150, 11, Color(0.55, 0.95, 0.7, 0.85))
