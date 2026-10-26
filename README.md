@@ -71,17 +71,20 @@ Each test runs headless, prints `[...]` log lines, and exits by itself.
    window, and how reliably the AI setter runs quick plays.
 4. **Attack** — in `set_flight`, watch the red-yellow-green bar and press `Space` in the
    green. Aim with the mouse, and press `E` to switch between a **full swing** and a **tip**.
-   **Attack** and **jump** set the spike's power and speed; a strong hitter wins more dice
-   contests against the block. A badly timed press is a weak swing; if you never press in
-   the window, the ball drops for the opponent. If the mouse is not over the opponent's
-   court, the hit is placed automatically.
+   The spike is a physical projectile: it can clear the tape, hit the net, or land out. A
+   badly timed press is a weak swing; if you never press in the window, the ball drops for
+   the opponent. **Attack** and **jump** set the spike's power and speed; a strong hitter
+   wins more dice contests against the block. If the mouse is not over the opponent's court,
+   the hit is placed automatically.
 5. **Block / dig** — while the opponent has the ball, `1`–`4` calls **READ**, **COMMIT**,
    **SPREAD**, or **TRIPLE**. The front row forms one wall and jumps together; the rest of the
    team shifts its floor coverage around that wall. At the net, attack and block are rolled as
    d6 contests: attack rating + d6 + spike power + jump timing against block rating + d6 + how
    smothered the shot is + block durability + scheme. **Block** skill widens each blocker's
-   span and increases durability. The receive ring is still your contact contract: press
-   `Space` as the ball drops, or dive to cover the extra ground.
+   span and increases durability. A block win is a **live physical deflection** back into the
+   attacker's court: wide touches can be saved with a good read or a dive, while a clean stuff
+   lands short and hard. The receive ring is still your contact contract: press `Space` as the
+   ball drops, or dive to cover the extra ground.
 
 The timing bar is red → yellow → green → yellow → red. The green is the perfect window and
 grows with the relevant stat: serve skill for serves, the setter's set skill for spikes, and
@@ -127,8 +130,16 @@ Every action now reads the relevant stat instead of using a fixed success rate:
 
 At the net, attack and block use a d6 contest. The attacker rolls attack rating + d6 + spike
 power + jump timing; the wall rolls block rating + d6 + how smothered the shot is + durability
-+ scheme. A clear block win is a stuff; a close win is a touch that takes sting off the ball;
-an attack win breaks through to the floor defense.
++ scheme. A clean block win drives the ball down short and hard; a glancing win is a wide,
+live deflection that the attacking team can still save.
+
+### Ball model
+Serves, passes, and sets stay on deterministic arcs so the rhythm and AI reads are reliable.
+**Attacks and block deflections are physical**: they are launched with real velocity, gravity,
+and a 120 Hz substepped flight, then collide with the floor and the net. The receive marker
+and AI use the current short-horizon landing estimate rather than a fixed scripted endpoint.
+This means a spike can genuinely miss the net, clip it, or sail long; a block touch can
+deflect wide and stay playable; and a completely missed swing drops rather than auto-hitting.
 
 ### Play calls
 `QUICK`, `BACK QUICK`, `WING`, `PIPE`, `DUMP` — press `1`–`5` after your receive. Each
