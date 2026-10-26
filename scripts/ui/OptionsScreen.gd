@@ -51,7 +51,6 @@ func _build() -> void:
 	_toggle("Auto receive", "The nearest receiver plays the ball automatically.", "auto_receive", bool(GameData.options["auto_receive"]))
 	_toggle("Auto set", "If you do not set in time, the setter plays a safe ball.", "auto_set", bool(GameData.options["auto_set"]))
 	_toggle("Auto attack", "The selected attacker swings even without input.", "auto_attack", bool(GameData.options["auto_attack"]))
-	_toggle("Assisted movement", "Idle players drift toward their assigned position.", "assist_move", bool(GameData.options["assist_move"]))
 	_toggle("Tactics slow-motion", "Opening the tactics board briefly slows the rally.", "tactics_slowmo", bool(GameData.options["tactics_slowmo"]))
 
 	_section("CONTROLS")
@@ -61,11 +60,13 @@ func _build() -> void:
 	hv.add_theme_constant_override("separation", 4)
 	help.add_child(hv)
 	var rows := [
-		["WASD / LEFT STICK", "Move the active player"],
+		["AUTO", "Players move into position and play their assignments"],
 		["MOUSE / RIGHT STICK", "Aim at a court zone"],
-		["SPACE / A", "Receive, set, block, or hold to charge a serve/spike"],
-		["SHIFT / LB", "Sprint (uses stamina)"],
-		["CTRL or C / B", "Dive for a desperate save"],
+		["SPACE / A", "Receive, jump, spike, block, or charge a serve"],
+		["CTRL or C / B", "Dive toward the drop point"],
+		["1–3", "Serve type while serving"],
+		["1–4", "Block scheme while defending"],
+		["1–5", "Attack play after the receive"],
 		["Q / X", "Switch active player"],
 		["E / Y", "Activate team FLOW ability when charged"],
 		["TAB / BACK", "Open tactics board"],
@@ -176,7 +177,6 @@ func _reset() -> void:
 		"auto_receive": false,
 		"auto_set": true,
 		"auto_attack": false,
-		"assist_move": true,
 		"tactics_slowmo": true
 	}
 	GameData.save_settings()

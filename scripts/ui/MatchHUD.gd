@@ -294,7 +294,7 @@ func _build_prompt() -> void:
 	prompt_label = UI.bold("HOLD SPACE TO SERVE", 20, UI.TEXT)
 	prompt_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(prompt_label)
-	hint = UI.label("WASD MOVE  •  MOUSE AIM  •  Q SWITCH  •  TAB TACTICS", 10, Color(1, 1, 1, 0.42))
+	hint = UI.label("AUTO POSITIONING  •  SPACE RECEIVE / JUMP  •  CTRL DIVE  •  TAB TACTICS", 10, Color(1, 1, 1, 0.42))
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(hint)
 

@@ -416,16 +416,77 @@ func _set_receive_target(side: int, slot: int, pressure: float, show_circle: boo
 	else:
 		court.hide_receive_marker()
 
-func _front_near_net(team: Dictionary, x: float) -> Array:
-	var out: Array = []
+func _block_count(scheme: int) -> int:
+	if scheme == 1:
+		return 1
+	if scheme == 3:
+		return 3
+	return 2
+
+func _block_anchor_x(landing: Vector3) -> float:
+	var x := landing.x
+	if phase == "attack_flight" and ball != null and ball.active:
+		var cross := ball.crossing(0.0)
+		if not cross.is_empty():
+			var cp: Vector3 = cross["pos"]
+			x = cp.x
+	return clampf(x, -HALF_W + 0.35, HALF_W - 0.35)
+
+## The block is one wall, not a crowd: the same front-row group travels to
+## the net together, spaced shoulder to shoulder around the attack line.
+func _block_plan(team: Dictionary, anchor_x: float) -> Dictionary:
+	var side := int(team["side"])
+	var sign := _signf(side)
+	var scheme := int(team.block_index)
+	var count := _block_count(scheme)
+	var pool: Array = []
 	for s in FRONT:
-		var rig: PlayerRig = team.rigs[s]
-		if absf(rig.global_position.x - x) < 2.7:
-			out.append(s)
-	out.sort_custom(func(a, b):
-		return absf(team.rigs[a].global_position.x - x) < absf(team.rigs[b].global_position.x - x)
+		if phase == "attack_flight" and side == int(rally.get("defending", -1)) and s == int(rally.get("chaser_slot", -1)):
+			continue
+		pool.append(s)
+	pool.sort_custom(func(a, b):
+		return absf(_base_pos(side, int(a)).x - anchor_x) < absf(_base_pos(side, int(b)).x - anchor_x)
 	)
-	return out
+	var slots: Array = pool.slice(0, mini(count, pool.size()))
+	var spacing := 0.92
+	if scheme == 2:
+		spacing = 1.14
+	elif scheme == 3:
+		spacing = 0.98
+	var walls := {}
+	if slots.size() == 1:
+		walls[int(slots[0])] = anchor_x
+	elif slots.size() == 2:
+		var right_slot: int = int(slots[0])
+		var right_x := -999.0
+		for s in slots:
+			var bx := _base_pos(side, int(s)).x
+			if bx > right_x:
+				right_x = bx
+				right_slot = int(s)
+		for s in slots:
+			var off := 0.5 * spacing if int(s) == right_slot else -0.5 * spacing
+			walls[int(s)] = anchor_x + off
+	else:
+		for s in slots:
+			var rel := 0.0
+			match int(s):
+				1: rel = 1.0
+				3: rel = -1.0
+				_: rel = 0.0
+			walls[int(s)] = anchor_x + rel * spacing * sign
+	for s in walls.keys():
+		walls[s] = clampf(float(walls[s]), -HALF_W + 0.3, HALF_W - 0.3)
+	return {"slots": slots, "walls": walls, "anchor": anchor_x, "count": slots.size()}
+
+func _wall_center(plan: Dictionary) -> float:
+	var walls: Dictionary = plan["walls"]
+	if walls.is_empty():
+		return float(plan["anchor"])
+	var total := 0.0
+	for s in walls.keys():
+		total += float(walls[s])
+	return total / maxf(1.0, float(walls.size()))
 
 func _is_setter(team: Dictionary, slot: int) -> bool:
 	return slot == _setter_slot(team)
@@ -527,6 +588,7 @@ func _begin_serve() -> void:
 		"chaser_side": -1,
 		"chaser_slot": -1,
 		"net_checked": false,
+		"block_jumped": false,
 		"jump_pressed": false,
 		"jump_quality": 0.0,
 		"timing_value": 0.0,
@@ -696,7 +758,7 @@ func _serve_release(quality: float, override_target = null) -> void:
 	if chaser.rig != null and (1 - serving_side == player_side or autoplay):
 		_set_active(1 - serving_side, int(chaser.slot))
 	if serving_side == player_side and not autoplay:
-		hud.commentary("Serve away. Move into position!", UI.MUTED, 1.6)
+		hud.commentary("Serve away. Press Space as the ball reaches the circle.", UI.MUTED, 1.6)
 	Sfx.play("serve", -7.0, 1.0 if idx != 2 else 0.82)
 	serve_charge = 0.0
 	serving_hold = false
@@ -1079,6 +1141,7 @@ func _resolve_serve_arrival(pos: Vector3) -> void:
 		_launch_dead(pos, int(rally.attacking), "ace", server)
 
 func _begin_pass(from: Vector3, side: int, quality: float, _origin: String) -> void:
+	court.hide_receive_marker()
 	var team: Dictionary = teams[side]
 	var setter := _setter_slot(team)
 	var nest := _setter_nest(team)
@@ -1096,6 +1159,10 @@ func _begin_pass(from: Vector3, side: int, quality: float, _origin: String) -> v
 	rally.setter_slot = setter
 	rally.pass_quality = q
 	rally.phase = "pass"
+	# The previous rally's receiver is no longer the chase target; clearing it
+	# keeps the other team's defensive coverage from skipping a lane.
+	rally.chaser_side = -1
+	rally.chaser_slot = -1
 	var dist := (target - from).length()
 	var arc := lerpf(0.50, 2.85, q)
 	var dur := lerpf(0.46, 1.08, q) + dist * lerpf(0.018, 0.050, q)
@@ -1110,7 +1177,7 @@ func _begin_pass(from: Vector3, side: int, quality: float, _origin: String) -> v
 		if q > 0.8:
 			hud.set_prompt("CLEAN PASS — THE SETTER HAS TIME", "TAB TACTICS  •  1-5 PLAY CALL")
 		else:
-			hud.set_prompt("SCRAMBLE PASS — THE SETTER IS ON THE MOVE", "MOVE THE SETTER UNDER THE BALL")
+			hud.set_prompt("SCRAMBLE PASS — THE SETTER IS MOVING", "AUTO POSITIONING  •  1-5 PLAY CALL")
 	else:
 		hud.set_prompt("PASS TO THE SETTER", "THE ATTACK IS FORMING")
 
@@ -1156,9 +1223,9 @@ func _resolve_pass_arrival(pos: Vector3) -> void:
 	Sfx.play("set", -9.0, 1.08)
 	hud.set_phase("ATTACK", UI.ORANGE)
 	if side == player_side and not autoplay:
-		hud.set_prompt("SPACE TO JUMP — TIME IT AT THE TOP", "AIM WITH MOUSE  •  E = TIP  •  1-5 PLAY CALL")
+		hud.set_prompt("SPACE TO JUMP — TIME IT AT THE TOP", "AIM WITH MOUSE  •  E = TIP  •  PLAY LOCKED")
 	else:
-		hud.set_prompt("%s IS ATTACKING" % str(team.data["short"]), "WATCH THE HITTER  •  1-4 DEFENSE")
+		hud.set_prompt("%s IS ATTACKING" % str(team.data["short"]), "WATCH THE HITTER  •  1-4 SCHEME")
 	if side != player_side and not autoplay:
 		hud.commentary("%s runs %s." % [str(team.data["short"]), PLAY_NAMES[play_index]], UI.MUTED, 1.6)
 
@@ -1331,11 +1398,14 @@ func _resolve_set_arrival(pos: Vector3) -> void:
 		arc = 0.72
 	else:
 		var dist := (pos - target).length()
-		dur = clampf(0.40 + dist * 0.010, 0.40, 0.60)
-		arc = 0.34
+		# A driven spike gets on the defense quickly; this is what turns
+		# good placement into kills now that receivers move automatically.
+		dur = clampf(0.30 + dist * 0.007, 0.32, 0.42)
+		arc = 0.28
 	rally.attack_quality = quality
 	rally.attack_target = target
 	rally.net_checked = false
+	rally.block_jumped = false
 	rally.block_winner = -1
 	rally.blocker_slot = -1
 	ball.launch(pos, target, dur, arc, "attack", rig, side, false)
@@ -1347,18 +1417,27 @@ func _resolve_set_arrival(pos: Vector3) -> void:
 	hud.hide_reticle()
 	court.hide_target_cell()
 	court.set_zone_grid_visible(false)
-	_trigger_block_jump(1 - side, target.x)
 	var def_team: Dictionary = teams[1 - side]
 	var chaser := _receiver_for(def_team, target)
 	rally.chaser_side = 1 - side
 	rally.chaser_slot = int(chaser.slot)
-	rally.def_react = clampf(0.30 - float(def_team.slots[int(chaser.slot)]["stats"]["receive"]) * 0.0018 - float(difficulty) * 0.014, 0.10, 0.28)
+	var human_def: bool = (1 - side) == player_side and not autoplay
+	var react: float
+	if human_def:
+		# The human cannot hand-steer anymore, so their receivers read the
+		# hit almost immediately. Auto positioning closes the rest.
+		react = 0.06 - float(def_team.slots[int(chaser.slot)]["stats"]["receive"]) * 0.0003 - float(difficulty) * 0.002
+		react = clampf(react, 0.02, 0.06)
+	else:
+		react = 0.18 - float(def_team.slots[int(chaser.slot)]["stats"]["receive"]) * 0.0008 - float(difficulty) * 0.006
+		react = clampf(react, 0.06, 0.14)
+	rally.def_react = react
 	var pressure := 0.06 + maxf(0.0, quality - 0.35) * 0.42
 	_set_receive_target(1 - side, int(chaser.slot), pressure, 1 - side == player_side and not autoplay)
 	if 1 - side == player_side and not autoplay:
 		_set_active(1 - side, int(chaser.slot))
 		hud.set_phase("DEFENSE", UI.RED)
-		hud.set_prompt("MOVE INTO THE CIRCLE", "SPACE TO RECEIVE  •  CTRL = DIVE  •  1-4 SCHEME")
+		hud.set_prompt("SPACE TO RECEIVE", "THE TEAM IS MOVING UNDER IT  •  CTRL = DIVE  •  1-4 SCHEME")
 
 func _play_attack_bonus(team: Dictionary) -> float:
 	if str(team.ability_kind) == "freak_quick" and int(team.ability_timer) > 0:
@@ -1369,26 +1448,24 @@ func _play_attack_bonus(team: Dictionary) -> float:
 
 func _trigger_block_jump(side: int, x: float) -> void:
 	var team: Dictionary = teams[side]
-	var scheme := int(team.block_index)
-	var limit := 2
-	if scheme == 1:
-		limit = 1
-	elif scheme == 3:
-		limit = 3
-	var candidates := _front_near_net(team, x)
-	var chosen := candidates.slice(0, mini(limit, candidates.size()))
-	for i in range(chosen.size()):
-		var s: int = chosen[i]
-		var rig: PlayerRig = team.rigs[s]
-		var p: Dictionary = team.slots[s]
-		var h := 0.48 + float(p["stats"]["block"]) * 0.0014
+	var plan := _block_plan(team, _block_anchor_x(Vector3(x, 0.0, 0.0)))
+	var slots: Array = plan["slots"]
+	var walls: Dictionary = plan["walls"]
+	for s in slots:
+		var rig: PlayerRig = team.rigs[int(s)]
+		var p: Dictionary = team.slots[int(s)]
+		var h := 0.46 + float(p["stats"]["block"]) * 0.0012
 		rig.jump(h, 0.90)
 		rig.play_action("block", 0.84)
-		var off := (float(i) - float(chosen.size() - 1) * 0.5) * 0.75
-		rig.set_target(Vector3(clampf(x + off, -HALF_W, HALF_W), 0.0, _signf(side) * 0.55))
+		rig.set_target(Vector3(float(walls[int(s)]), 0.0, _signf(side) * 0.68))
 
 func _try_block() -> void:
 	if phase != "attack_flight" or bool(rally.get("net_checked", false)):
+		return
+	if not ball.active:
+		return
+	var ttc := ball.time_to_cross(0.0)
+	if ttc < 0.0 or ball.t < ttc - 0.06:
 		return
 	var cross := ball.crossing(0.0)
 	if cross.is_empty():
@@ -1401,28 +1478,30 @@ func _try_block() -> void:
 		return
 	var def_side := 1 - int(rally.attacking)
 	var team: Dictionary = teams[def_side]
-	var candidates := _front_near_net(team, pos.x)
-	if candidates.is_empty():
+	var plan := _block_plan(team, _block_anchor_x(pos))
+	var chosen: Array = plan["slots"]
+	if chosen.is_empty():
 		return
 	var scheme := int(team.block_index)
-	var limit := 2
 	var mult := 1.0
 	match scheme:
-		0: limit = 2; mult = 1.0
-		1: limit = 1; mult = 1.1
-		2: limit = 2; mult = 0.97
-		3: limit = 3; mult = 1.06
-	var chosen := candidates.slice(0, mini(limit, candidates.size()))
+		1: mult = 1.1
+		2: mult = 0.97
+		3: mult = 1.06
 	var block_sum := 0.0
 	for s in chosen:
-		block_sum += float(team.slots[s]["stats"]["block"])
+		block_sum += float(team.slots[int(s)]["stats"]["block"])
 	var block_score := (block_sum / maxf(1.0, float(chosen.size()))) / 100.0 * mult
 	block_score *= 1.0 + float(chosen.size() - 1) * 0.045
 	block_score += _flow_bonus(def_side, "block")
 	if str(team.ability_kind) == "twin_decoy" and int(team.ability_timer) > 0:
 		block_score -= 0.1
+	# A wall that is not actually in front of the attack cannot stuff it.
+	var gap := absf(_wall_center(plan) - pos.x)
+	var geometry := clampf(1.12 - gap * 0.16, 0.45, 1.0)
 	var attack_score := float(rally.attack_quality)
-	var chance := clampf(0.08 + (block_score - attack_score) * 0.62 + float(chosen.size()) * 0.04 + float(rally.get("player_block_bonus", 0.0)), 0.01, 0.62)
+	var chance := (0.08 + (block_score - attack_score) * 0.62 + float(chosen.size()) * 0.04 + float(rally.get("player_block_bonus", 0.0))) * geometry
+	chance = clampf(chance, 0.01, 0.62)
 	if str(rally.attack_type) == "tip":
 		chance *= 0.28
 	if _rng.randf() < chance:
@@ -1479,6 +1558,10 @@ func _resolve_attack_arrival(pos: Vector3) -> void:
 	if quality < 0.0 and not human_recv:
 		quality = _emergency_touch(player, dist, radius)
 	if quality >= 0.0:
+		# A driven spike can be kept alive, but it rarely comes back as a
+		# clean pass. The harder the hit, the scrappier the dig.
+		var dig_cap := 0.94 - float(rally.get("attack_quality", 0.6)) * 0.38
+		quality = minf(quality, clampf(dig_cap, 0.45, 0.90))
 		rally.receive_quality = quality
 		_player_stat(player, "digs", 1)
 		_team_stat(def_team, "digs", 1)
@@ -1682,24 +1765,9 @@ func _update_input(delta: float) -> void:
 			active_rig.set_move_input(Vector2.ZERO)
 		return
 	var human := active_side == player_side and not autoplay and active_rig != null
-	if human and active_rig:
-		var v := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
-		if phase != "serve":
-			var fwd := -camera.global_transform.basis.z
-			fwd.y = 0.0
-			if fwd.length() < 0.01:
-				fwd = Vector3(0, 0, 1)
-			fwd = fwd.normalized()
-			var right := camera.global_transform.basis.x
-			right.y = 0.0
-			if right.length() < 0.01:
-				right = Vector3(1, 0, 0)
-			right = right.normalized()
-			var world := right * v.x + fwd * (-v.y)
-			active_rig.set_move_input(Vector2(world.x, world.z))
-		else:
-			active_rig.set_move_input(Vector2.ZERO)
-	elif active_rig:
+	# Team movement is automatic now. The human owns the timing decisions
+	# (Space / Ctrl / aim), while the squad runs its assignments.
+	if active_rig:
 		active_rig.set_move_input(Vector2.ZERO)
 
 	if Input.is_action_just_pressed("switch_player") and swap_cooldown <= 0.0 and phase != "serve" and not autoplay:
@@ -1717,8 +1785,11 @@ func _update_input(delta: float) -> void:
 			_activate_ability(player_side)
 	if Input.is_action_just_pressed("dive") and human and active_rig:
 		var dd := Vector3.ZERO
-		if active_rig.move_input.length() > 0.1:
-			dd = Vector3(active_rig.move_input.x, 0.0, active_rig.move_input.y)
+		var receive_phase: bool = phase in ["serve_flight", "attack_flight", "free_flight", "block_flight"]
+		if receive_phase and ball.active:
+			# Dive at the drop point, not at the ball's current position.
+			dd = ball.end - active_rig.global_position
+			dd.y = 0.0
 		elif ball.active:
 			dd = ball.global_position - active_rig.global_position
 			dd.y = 0.0
@@ -1732,11 +1803,15 @@ func _update_input(delta: float) -> void:
 		if active_slot == chaser_slot:
 			if Input.is_action_just_pressed("action") and not bool(rally.get("receive_pressed", false)):
 				_register_receive_press()
-		elif Input.is_action_just_pressed("action") and FRONT.has(active_slot) and not active_rig.is_jumping:
-			rally.player_block_bonus = minf(0.18, float(rally.get("player_block_bonus", 0.0)) + 0.09)
-			active_rig.jump(0.55, 0.88)
-			active_rig.play_action("block", 0.78)
-			Sfx.play("ui", -12.0, 0.9)
+		elif Input.is_action_just_pressed("action") and FRONT.has(active_slot):
+			# The wall jumps automatically now. A well-timed Space from a
+			# front-row player still adds a small close-out bonus.
+			var ttc := ball.time_to_cross(0.0) if ball.active else -1.0
+			var rem := ttc - ball.t if ttc >= 0.0 else 99.0
+			if rem >= -0.05 and rem <= 0.55:
+				rally.player_block_bonus = minf(0.18, float(rally.get("player_block_bonus", 0.0)) + 0.09)
+				Sfx.play("ui", -12.0, 0.9)
+				hud.set_prompt("BLOCK CLOSED", "THE WALL IS SET")
 	if phase == "serve_flight" and int(rally.get("defending", -1)) == player_side and human:
 		var chaser_slot2 := int(rally.get("chaser_slot", -1))
 		if active_slot == chaser_slot2 and Input.is_action_just_pressed("action") and not bool(rally.get("receive_pressed", false)):
@@ -1771,20 +1846,32 @@ func _update_number_keys() -> void:
 	if autoplay:
 		return
 	var team: Dictionary = teams[player_side]
-	# 1–3 serve, 1–4 defense, 1–5 attack. Context decides which row the
-	# number keys talk to, so the player never has to open the board mid-rally.
-	var defending: bool = phase in ["serve_flight", "pass_flight", "set_flight", "attack_flight", "block_flight", "free_flight"] \
-		and int(rally.get("attacking", -1)) != player_side
+	# Strict context windows so a key never leaks into another row:
+	#   serve  → 1-3 only (serve type)
+	#   attack → 1-5 only (play call), opening once our receive is controlled
+	#   block  → 1-4 only (scheme), throughout the opponent's possession
+	var ctx := ""
+	if phase == "serve" and serving_side == player_side:
+		ctx = "serve"
+	elif phase == "pass_flight" and int(rally.get("attacking", -1)) == player_side:
+		ctx = "attack"
+	elif int(rally.get("attacking", -1)) != player_side and int(rally.get("attacking", -1)) >= 0 \
+		and phase in ["serve_flight", "pass_flight", "set_flight", "attack_flight", "block_flight", "free_flight"]:
+		ctx = "defense"
 	for i in range(5):
 		if not Input.is_action_just_pressed("num%d" % (i + 1)):
 			continue
-		if phase == "serve" and serving_side == player_side and i < 3:
+		if ctx == "serve":
+			if i >= 3:
+				continue
 			team.serve_index = i
 			hud.commentary("SERVE: " + SERVE_NAMES[i], UI.CYAN, 1.2)
-		elif defending and i < 4:
+		elif ctx == "defense":
+			if i >= 4:
+				continue
 			team.block_index = i
 			hud.commentary("DEFENSE: " + BLOCK_NAMES[i], UI.CYAN, 1.2)
-		elif not defending:
+		elif ctx == "attack":
 			team.play_index = i
 			hud.commentary("PLAY: " + PLAY_NAMES[i], UI.CYAN, 1.2)
 		else:
@@ -1887,8 +1974,9 @@ func _update_ai(_delta: float) -> void:
 		var ai_controlled: bool = side != player_side or autoplay
 		for s in range(6):
 			var rig: PlayerRig = team.rigs[s]
-			if not ai_controlled and rig == active_rig:
-				continue
+			var chasing: bool = side == int(rally.get("defending", -1)) and s == int(rally.get("chaser_slot", -1)) \
+				and phase in ["serve_flight", "attack_flight", "free_flight"]
+			rig.chase_boost = 1.1 if chasing else 1.0
 			var spot := _ai_target_for(side, s, rig)
 			var d := Vector2(spot.x - rig.global_position.x, spot.z - rig.global_position.z).length()
 			if d > 0.16:
@@ -1902,12 +1990,6 @@ func _update_ai(_delta: float) -> void:
 				if not hr.is_jumping and ball.active and ball.t >= ball.duration * 0.46:
 					hr.jump(0.62, 0.90)
 					hr.play_action("spike", 0.62)
-	if not autoplay and active_side == player_side and active_rig and bool(GameData.options.get("assist_move", true)):
-		if phase in ["serve_flight", "attack_flight", "free_flight"]:
-			var land := ball.end
-			var dd := Vector2(land.x - active_rig.global_position.x, land.z - active_rig.global_position.z).length()
-			if dd > 0.35 and dd < 3.2:
-				active_rig.set_target(Vector3(land.x, 0.0, land.z))
 
 func _ai_target_for(side: int, slot: int, rig: PlayerRig) -> Vector3:
 	var team: Dictionary = teams[side]
@@ -1915,6 +1997,10 @@ func _ai_target_for(side: int, slot: int, rig: PlayerRig) -> Vector3:
 	var defending: int = int(rally.get("defending", -1))
 	var chaser: int = int(rally.get("chaser_slot", -1))
 	var live: bool = phase in ["serve_flight", "pass_flight", "set_flight", "attack_flight", "block_flight", "free_flight"]
+	if phase == "serve":
+		# Hold the serve/receive shape until the whistle. Nobody drifts back
+		# to the base formation while the server is setting up.
+		return rig.global_position
 	if not live:
 		return _base_pos(side, slot)
 	if side == defending and phase == "attack_flight" and ball.active and ball.t < float(rally.get("def_react", 0.0)):
@@ -1927,7 +2013,10 @@ func _ai_target_for(side: int, slot: int, rig: PlayerRig) -> Vector3:
 	if side == attacking:
 		if slot == int(rally.get("setter_slot", -1)) and phase in ["pass_flight", "set_flight"]:
 			return _setter_nest(team)
-		if slot == int(rally.get("hitter_slot", -1)) and phase in ["set_flight", "attack_flight"]:
+		if slot == int(rally.get("hitter_slot", -1)) and phase == "set_flight":
+			var st: Vector3 = rally.get("set_target", rig.global_position)
+			return Vector3(st.x, 0.0, st.z)
+		if slot == int(rally.get("hitter_slot", -1)) and phase == "attack_flight":
 			var hp := rig.global_position
 			hp.y = 0.0
 			return hp
@@ -1949,21 +2038,79 @@ func _attack_spot(team: Dictionary, slot: int) -> Vector3:
 func _defense_spot(team: Dictionary, slot: int, landing: Vector3) -> Vector3:
 	var side := int(team["side"])
 	var sign := _signf(side)
-	var base := _base_pos(side, slot)
+	var anchor := _block_anchor_x(landing)
+	var plan := _block_plan(team, anchor)
+	var slots: Array = plan["slots"]
+	var walls: Dictionary = plan["walls"]
+	if slots.has(slot):
+		return Vector3(float(walls[slot]), 0.0, sign * 0.68)
 	if FRONT.has(slot):
-		var scheme := int(team.block_index)
-		var step := 0.95
-		if scheme == 1:
-			step = 0.35
-		elif scheme == 3:
-			step = 1.2
-		var x := clampf(landing.x, -HALF_W + 0.45, HALF_W - 0.45)
-		var shift := float(2 - slot) * 0.5 * step * sign
-		return Vector3(clampf(x + shift, -HALF_W + 0.2, HALF_W - 0.2), 0.0, sign * 1.02)
-	var z := base.z
-	if sign * landing.z > 0.0:
-		z = lerpf(base.z, sign * clampf(absf(landing.z), 3.2, 8.6), 0.20)
-	return Vector3(clampf(base.x + (landing.x - base.x) * 0.22, -HALF_W + 0.25, HALF_W - 0.25), 0.0, z)
+		return _short_cover_spot(team, slot, plan, sign)
+	return _deep_cover_spot(team, slot, plan, sign, landing)
+
+## A front-row player outside the wall drops into the short court the block
+## leaves open, shading away from the wall so the seams stay covered.
+func _short_cover_spot(team: Dictionary, slot: int, plan: Dictionary, sign: float) -> Vector3:
+	var side := int(team["side"])
+	var base := _base_pos(side, slot)
+	var base_local := base.x * sign
+	var anchor_local := float(plan["anchor"]) * sign
+	var x_local := base_local
+	if int(plan["count"]) >= 2:
+		x_local = lerpf(base_local, -anchor_local * 0.6, 0.45)
+	else:
+		x_local = base_local * 0.72
+	x_local = clampf(x_local, -HALF_W + 0.55, HALF_W - 0.55)
+	return Vector3(x_local * sign, 0.0, sign * 2.7)
+
+## The back row fans into three deep lanes, shifting away from the wall so the
+## block and the floor defenders cover different parts of the court. The lane
+## the receiver is already chasing is removed from the pool, so the remaining
+## defenders cover the open floor instead of stacking on the ball.
+func _deep_cover_spot(team: Dictionary, slot: int, plan: Dictionary, sign: float, landing: Vector3) -> Vector3:
+	var side := int(team["side"])
+	var anchor_local := float(plan["anchor"]) * sign
+	var shift := -clampf(anchor_local, -2.6, 2.6) * 0.32
+	var lanes := [-3.05 + shift, 0.0 + shift, 3.05 + shift]
+	var land_local := clampf(landing.x * sign, -HALF_W, HALF_W)
+	var chaser := int(rally.get("chaser_slot", -1))
+	var lane_pool: Array = []
+	if BACK.has(chaser):
+		var skip := 0
+		var best := 999.0
+		for i in range(lanes.size()):
+			var d := absf(float(lanes[i]) - land_local)
+			if d < best:
+				best = d
+				skip = i
+		for i in range(lanes.size()):
+			if i != skip:
+				lane_pool.append(lanes[i])
+	else:
+		lane_pool = lanes.duplicate()
+	var order: Array = BACK.duplicate()
+	order.sort_custom(func(a, b):
+		return _base_pos(side, int(a)).x < _base_pos(side, int(b)).x
+	)
+	# Rank this defender among the back-row players who are not the receiver.
+	var rank := 0
+	for s in order:
+		if int(s) == chaser:
+			continue
+		if int(s) == slot:
+			break
+		rank += 1
+	rank = clampi(rank, 0, maxi(0, lane_pool.size() - 1))
+	var target_local := float(lane_pool[rank]) if not lane_pool.is_empty() else 0.0
+	target_local = lerpf(target_local, land_local, 0.06)
+	var scheme := int(team.block_index)
+	var depth := 6.6
+	if scheme == 3:
+		depth = 7.15
+	elif scheme == 1:
+		depth = 6.05
+	target_local = clampf(target_local, -HALF_W + 0.4, HALF_W - 0.4)
+	return Vector3(target_local * sign, 0.0, sign * depth)
 
 func _update_rigs(delta: float) -> void:
 	for team in teams:
@@ -1974,6 +2121,12 @@ func _update_ball(delta: float) -> void:
 	if ball.active:
 		ball.tick(delta)
 	if phase == "attack_flight":
+		if not bool(rally.get("block_jumped", false)) and ball.active:
+			var ttc := ball.time_to_cross(0.0)
+			var rem := ttc - ball.t if ttc >= 0.0 else -1.0
+			if (ttc >= 0.0 and rem <= 0.42) or (ttc < 0.0 and ball.t >= ball.duration * 0.45):
+				rally.block_jumped = true
+				_trigger_block_jump(int(rally.get("defending", 1)), ball.end.x)
 		_try_block()
 
 # ---------------------------------------------------------------------------
@@ -2080,13 +2233,13 @@ func _update_hud(_delta: float) -> void:
 		if active_slot != rslot:
 			hud.set_prompt("Q — RETURN TO THE RECEIVER", "THE BALL IS COMING DOWN")
 		elif bool(rally.get("receive_pressed", false)):
-			hud.set_prompt("CONTACT LOCKED — STAY IN THE CIRCLE", "GOOD POSITION WINS THE RALLY")
+			hud.set_prompt("CONTACT LOCKED", "THE RECEIVER HAS THE BALL")
 		elif dist > radius:
-			hud.set_prompt("MOVE INTO THE CIRCLE", "SPACE TO RECEIVE  •  CTRL = DIVE  •  1-4 DEFENSE")
+			hud.set_prompt("DIVE TO STRETCH", "CTRL = DIVE  •  SPACE = RECEIVE")
 		elif timing_open:
 			hud.set_prompt("PRESS SPACE NOW", "TIMING + POSITION  •  BETTER DEFENDERS = BIGGER WINDOW")
 		else:
-			hud.set_prompt("GET SET — WAIT FOR THE BALL", "THE CIRCLE IS YOUR RECEIVING ZONE")
+			hud.set_prompt("GET SET — PRESS SPACE AT THE BALL", "AUTO POSITIONING  •  THE CIRCLE IS YOUR ZONE")
 		return
 
 	if phase == "serve" and serving_side == player_side:

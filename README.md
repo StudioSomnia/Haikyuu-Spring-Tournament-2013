@@ -41,9 +41,8 @@ Each test runs headless, prints `[...]` log lines, and exits by itself.
 
 | Action | Keyboard | Gamepad |
 | --- | --- | --- |
-| Move | `W A S D` / arrow keys | Left stick |
-| Sprint | `Shift` (hold) | LB |
-| Action — serve charge / jump / spike / block | `Space` (hold, release) | A |
+| Team positioning & receive | Automatic | — |
+| Action — receive / serve charge / jump / spike | `Space` (hold, release) | A |
 | Dive / emergency dig | `Ctrl` or `C` | B |
 | Switch controlled player | `Q` | X |
 | Special — FLOW ability / toggle tip vs. spike | `E` | Y |
@@ -52,33 +51,34 @@ Each test runs headless, prints `[...]` log lines, and exits by itself.
 | Change camera | `V` | RB |
 | Serve type (while serving) | `1`–`3` | — |
 | Block scheme (while defending) | `1`–`4` | — |
-| Play call (while attacking) | `1`–`5` | — |
+| Play call (after your receive) | `1`–`5` | — |
 | Aim | Mouse | — |
 
 ### How a possession plays out
 
-1. **Serve** — hold `Space` to charge, release inside the green band. Pick **OVERHAND**,
-   **UNDERARM**, or **JUMP** with `1`–`3` (or on the tactics board). Without a mouse aim the
-   serve still finds a safe zone.
-2. **Reception** — the landing ring shows where the ball will come down. Get the receiver
-   inside the ring, then press `Space` as the ball arrives; a white ring closes on the
-   centre as a second timing cue. The ring size and the timing window scale with that
-   player's **receive** and **speed** stats. `Ctrl`/`C` dives for a longer stretch, but the
-   landing leaves you a step slower to recover. A clean receive hangs in the air; a shanked
-   one is flat and forces the setter to scramble.
-3. **Set** — the setter runs the called play. `1`–`5` changes the play call on the fly.
-   Clean passes buy a slower, higher set; poor passes compress the attack.
+1. **Serve** — hold `Space` to charge, release inside the green band. While you are serving,
+   `1`–`3` selects **OVERHAND**, **UNDERARM**, or **JUMP**. `4` and `5` are deliberately
+   inactive in this phase. Without a mouse aim the serve still finds a safe zone.
+2. **Reception** — the team picks the nearest receiver and runs them to the landing ring
+   automatically. You only time the contact: press `Space` as the ball arrives. A white ring
+   closes on the centre as a second timing cue. The ring size and the timing window scale
+   with that player's **receive** and **speed** stats. `Ctrl`/`C` dives at the drop point for
+   a longer reach; getting up costs a beat. A clean receive hangs in the air; a shanked one
+   is flat and forces the setter to scramble.
+3. **Set** — once your receive is controlled, `1`–`5` opens the attack calls. The setter runs
+   the called play. Clean passes buy a slower, higher set; poor passes compress the attack.
 4. **Attack** — in `set_flight`, press `Space` near the top of the set (timing bar), aim with
    the mouse, and press `E` to switch between a **full swing** and a **tip**. If the mouse is
    not over the opponent's court, the hit is placed automatically.
-5. **Block / dig** — press `Space` in the front row to add your own block to the wall. On
-   defense, press `1`–`4` to call **READ**, **COMMIT**, **SPREAD**, or **TRIPLE**, then move
-   under the receive ring and press `Space`. Hitters aim for the deep corners, so a perfect
-   read still has to move.
+5. **Block / dig** — while the opponent's attack is live, `1`–`4` calls **READ**, **COMMIT**,
+   **SPREAD**, or **TRIPLE**. The front row forms one wall and jumps together; the rest of the
+   team shifts its floor coverage around that wall. The receive ring is still your contact
+   contract: press `Space` as the ball drops, or dive to cover the extra ground.
 
-The receive ring is the contract: inside it you get a contact, outside it (without a dive)
-the ball hits the floor. The reticle stays on screen all rally — bright while aiming, dimmed
-with a dark outline while it is just your cursor.
+The number keys are strictly context-locked: **1–3 while serving**, **1–4 throughout the
+opponent's possession**, and **1–5 only after your side has controlled the receive**. A key
+from another phase does nothing. The reticle stays on screen all rally — bright while aiming,
+dimmed with a dark outline while it is just your cursor.
 
 ---
 
@@ -102,18 +102,21 @@ Lineups are saved to `user://starting_lineups.json`; **RESET TO DEFAULT** restor
 original six.
 
 ### Play calls
-`QUICK`, `BACK QUICK`, `WING`, `PIPE`, `DUMP` — press `1`–`5` while attacking. Each changes
-the set target, tempo, and how the block reads you. Fast attacks beat slow blocks but demand
-a clean pass.
+`QUICK`, `BACK QUICK`, `WING`, `PIPE`, `DUMP` — press `1`–`5` after your receive. Each
+changes the set target, tempo, and how the block reads you. Fast attacks beat slow blocks but
+demand a clean pass.
 
 ### Serve types
 Press `1`–`3` while serving: **OVERHAND** (safe, breaks reception shape), **UNDERARM**
 (high-percentage, easy to receive — useful early), **JUMP** (power and low trajectory).
+`4`–`5` are inactive during the serve.
 
 ### Block schemes
-Press `1`–`4` while defending: **READ** (balanced two-man), **COMMIT** (one blocker sells out
-on the middle), **SPREAD** (wide wall against pin hitters), **TRIPLE** (three-man roof,
-vulnerable to tips).
+Press `1`–`4` while the opponent's attack is live: **READ** (balanced two-man), **COMMIT**
+(one blocker sells out on the middle), **SPREAD** (wide wall against pin hitters), **TRIPLE**
+(three-man roof, vulnerable to tips). The block is a single unit — the chosen front-row
+players travel to the net together in a fixed spacing, and the remaining players fan into
+short and deep coverage lanes around the wall.
 
 ### Reception formations
 `BALANCED`, `PERIMETER`, `STACK`.
@@ -136,8 +139,9 @@ school's signature ability for the next three rallies:
 | Wakutani Minami | ACE'S WILL | Ace attacks hit harder |
 
 ### Player growth inside a match
-Stamina drains with sprinting, jumping, and diving. Tired players move slower and hit
-weaker. Rotate, call timeouts, and use **Substitutions** from the pause menu.
+Stamina drains with jumping and diving; receivers sprint automatically, so repeated dives
+cost them. Tired players move slower and hit weaker. Rotate, call timeouts, and use
+**Substitutions** from the pause menu.
 
 **Timeouts** — two per set, called from the pause screen. They restore stamina across the
 floor and add FLOW.

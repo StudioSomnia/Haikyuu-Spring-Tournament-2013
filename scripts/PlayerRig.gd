@@ -34,6 +34,7 @@ var target_pos := Vector3.ZERO
 var has_target := false
 var controlled := false
 var speed := 4.2
+var chase_boost := 1.0
 var stamina := 100.0
 var stamina_max := 100.0
 var exhausted := false
@@ -43,6 +44,7 @@ var jump_t := 0.0
 var jump_duration := 0.0
 var jump_height := 0.0
 var is_jumping := false
+var dive_time := 0.0
 var jump_offset := 0.0
 
 var anim_time := 0.0
@@ -261,41 +263,50 @@ func tick(dt: float, bounds_enabled: bool = true) -> void:
 	if dt <= 0.0:
 		return
 
-	var desired := Vector3.ZERO
-	if controlled and move_input.length() > 0.08:
-		desired = Vector3(move_input.x, 0, move_input.y)
-	elif has_target:
-		var to := target_pos - global_position
-		to.y = 0
-		if to.length() > 0.10:
-			desired = to.normalized()
-			if to.length() < 0.25:
-				desired *= 0.5
-			if controlled:
-				desired *= 0.78
-		else:
-			has_target = false
-
-	var sprinting := Input.is_action_pressed("sprint") and controlled and move_input.length() > 0.1
-	var spd := speed
-	if sprinting and stamina > 2.0:
-		spd *= 1.62
-		stamina = max(0.0, stamina - dt * 11.5)
-	else:
-		stamina = min(stamina_max, stamina + dt * 5.5)
-	exhausted = stamina < stamina_max * 0.18
-	if exhausted:
-		spd *= 0.78
+	var spd := speed * chase_boost
 	if recover_time > 0.0:
 		# Getting up from a dive costs a beat: start slow and ramp back up.
 		recover_time = maxf(0.0, recover_time - dt)
 		spd *= lerpf(0.45, 1.0, 1.0 - clampf(recover_time / 0.9, 0.0, 1.0))
+	exhausted = stamina < stamina_max * 0.18
+	if exhausted:
+		spd *= 0.78
 
-	var accel := 20.0 if desired.length() > 0.01 else 22.0
-	velocity = velocity.move_toward(desired * spd, accel * dt)
-	if velocity.length() < 0.02:
-		velocity = Vector3.ZERO
-	global_position += velocity * dt
+	if dive_time > 0.0:
+		# A dive is a committed lunge: no steering while airborne, just slide.
+		dive_time = maxf(0.0, dive_time - dt)
+		velocity = velocity.move_toward(Vector3.ZERO, 13.0 * dt)
+		global_position += velocity * dt
+	else:
+		var desired := Vector3.ZERO
+		if controlled and move_input.length() > 0.08:
+			desired = Vector3(move_input.x, 0, move_input.y)
+		elif has_target:
+			var to := target_pos - global_position
+			to.y = 0
+			if to.length() > 0.10:
+				desired = to.normalized()
+				if to.length() < 0.25:
+					desired *= 0.5
+			else:
+				has_target = false
+
+		var accel := 20.0 if desired.length() > 0.01 else 22.0
+		if has_target:
+			var remain := target_pos - global_position
+			remain.y = 0.0
+			if remain.length() < 2.2:
+				# Brake hard near the assignment so a sprinting receiver
+				# settles on the ball instead of skating past it.
+				accel = 36.0
+		velocity = velocity.move_toward(desired * spd, accel * dt)
+		if velocity.length() < 0.02:
+			velocity = Vector3.ZERO
+		global_position += velocity * dt
+
+	# Movement is automatic now, so stamina only drains through dives and
+	# jumps and slowly recovers while the player runs their assignment.
+	stamina = minf(stamina_max, stamina + dt * 5.5)
 
 	if bounds_enabled:
 		global_position.x = clampf(global_position.x, _bounds.position.x, _bounds.position.x + _bounds.size.x)
@@ -436,8 +447,15 @@ func _update_ring(dt: float) -> void:
 
 func start_dive(dir: Vector3) -> void:
 	play_action("dive", 0.42)
-	velocity = dir.normalized() * 8.4
-	global_position += dir.normalized() * 0.5
+	var d := dir
+	d.y = 0.0
+	if d.length() < 0.01:
+		d = Vector3(0, 0, 1)
+	d = d.normalized()
+	velocity = d * 6.8
+	global_position += d * 0.28
+	dive_time = 0.42
+	has_target = false
 	recover_time = 0.95
 	stamina = max(0.0, stamina - 3.5)
 
@@ -447,7 +465,9 @@ func reset_for_serve() -> void:
 	has_target = false
 	is_jumping = false
 	jump_offset = 0.0
+	dive_time = 0.0
 	recover_time = 0.0
+	chase_boost = 1.0
 	action_name = ""
 	action_duration = 0.0
 	_celebrate = 0.0
@@ -466,7 +486,9 @@ func set_player(p: Dictionary) -> void:
 	stamina = stamina_max
 	speed = 3.9 + float(data["stats"]["speed"]) * 0.018
 	jump_offset = 0.0
+	dive_time = 0.0
 	recover_time = 0.0
+	chase_boost = 1.0
 	is_jumping = false
 	velocity = Vector3.ZERO
 	_build()

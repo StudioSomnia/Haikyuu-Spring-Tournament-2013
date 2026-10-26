@@ -44,11 +44,6 @@ func _has_arg(arg: String) -> bool:
 # ---------------------------------------------------------------------------
 
 func _setup_input() -> void:
-	_key("move_forward", [KEY_W, KEY_UP])
-	_key("move_back", [KEY_S, KEY_DOWN])
-	_key("move_left", [KEY_A, KEY_LEFT])
-	_key("move_right", [KEY_D, KEY_RIGHT])
-	_key("sprint", [KEY_SHIFT])
 	_key("action", [KEY_SPACE])
 	_key("dive", [KEY_CTRL, KEY_C])
 	_key("switch_player", [KEY_Q])
@@ -70,11 +65,6 @@ func _setup_input() -> void:
 	_joy_button("tactics", JOY_BUTTON_BACK)
 	_joy_button("pause", JOY_BUTTON_START)
 	_joy_button("camera", JOY_BUTTON_RIGHT_SHOULDER)
-	_joy_button("sprint", JOY_BUTTON_LEFT_SHOULDER)
-	_joy_axis("move_left", JOY_AXIS_LEFT_X, -1.0)
-	_joy_axis("move_right", JOY_AXIS_LEFT_X, 1.0)
-	_joy_axis("move_forward", JOY_AXIS_LEFT_Y, -1.0)
-	_joy_axis("move_back", JOY_AXIS_LEFT_Y, 1.0)
 
 func _key(action: String, keys: Array) -> void:
 	if not InputMap.has_action(action):
@@ -89,14 +79,6 @@ func _joy_button(action: String, button: int) -> void:
 		InputMap.add_action(action)
 	var ev := InputEventJoypadButton.new()
 	ev.button_index = button
-	InputMap.action_add_event(action, ev)
-
-func _joy_axis(action: String, axis: int, value: float) -> void:
-	if not InputMap.has_action(action):
-		InputMap.add_action(action)
-	var ev := InputEventJoypadMotion.new()
-	ev.axis = axis
-	ev.axis_value = value
 	InputMap.action_add_event(action, ev)
 
 # ---------------------------------------------------------------------------
@@ -272,34 +254,6 @@ func _tap(action: String, seconds: float = 0.08) -> void:
 	await get_tree().create_timer(seconds).timeout
 	_send_action(action, false)
 
-## Hold the movement keys that walk the active player toward a court position.
-func _steer_to(m, target: Vector3) -> void:
-	if m.active_rig == null:
-		return
-	var d: Vector3 = Vector3(target.x - m.active_rig.global_position.x, 0.0, target.z - m.active_rig.global_position.z)
-	for a in ["move_left", "move_right", "move_forward", "move_back"]:
-		_send_action(a, false)
-	if d.length() < 0.18:
-		return
-	var fwd: Vector3 = -m.camera.global_transform.basis.z
-	fwd.y = 0.0
-	var right: Vector3 = m.camera.global_transform.basis.x
-	right.y = 0.0
-	if fwd.length() < 0.01 or right.length() < 0.01:
-		return
-	fwd = fwd.normalized()
-	right = right.normalized()
-	var vx := d.dot(right)
-	var vy := d.dot(fwd)
-	if vx > 0.18:
-		_send_action("move_right", true)
-	elif vx < -0.18:
-		_send_action("move_left", true)
-	if vy > 0.18:
-		_send_action("move_forward", true)
-	elif vy < -0.18:
-		_send_action("move_back", true)
-
 func _start_matchtest() -> void:
 	print("[matchtest] starting simulated-input match")
 	var m = MatchScene.new()
@@ -322,6 +276,7 @@ func _start_matchtest() -> void:
 	var receives: int = 0
 	var serve_key_done := false
 	var def_key_done := false
+	var attack_key_done := false
 	while t < 30.0:
 		await get_tree().create_timer(0.1).timeout
 		t += 0.1
@@ -329,6 +284,9 @@ func _start_matchtest() -> void:
 		if ph == "serve" and int(m.serving_side) == int(m.player_side):
 			if not serve_key_done:
 				serve_key_done = true
+				var play_before := int(m.teams[0].play_index)
+				await _tap("num5")
+				print("[matchtest] serve ignores num5: play ", play_before, " -> ", int(m.teams[0].play_index))
 				await _tap("num3")
 				print("[matchtest] serve type index=", int(m.teams[0].serve_index), " name=", str(m.SERVE_NAMES[int(m.teams[0].serve_index)]))
 			if not holding:
@@ -346,24 +304,26 @@ func _start_matchtest() -> void:
 			holding = false
 		if ph == "attack_flight" and int(m.rally.get("attacking", -1)) != int(m.player_side) and not def_key_done:
 			def_key_done = true
+			var block_before := int(m.teams[0].block_index)
+			await _tap("num5")
+			print("[matchtest] defense ignores num5: block ", block_before, " -> ", int(m.teams[0].block_index))
 			await _tap("num2")
 			print("[matchtest] defense index=", int(m.teams[0].block_index), " name=", str(m.BLOCK_NAMES[int(m.teams[0].block_index)]))
-		# New receive system: get under the ball, then press Space inside the
-		# timing window. Poll at frame-ish resolution so we never miss it.
+		if ph == "pass_flight" and int(m.rally.get("attacking", -1)) == int(m.player_side) and not attack_key_done:
+			attack_key_done = true
+			await _tap("num4")
+			print("[matchtest] attack play index=", int(m.teams[0].play_index), " name=", str(m.PLAY_NAMES[int(m.teams[0].play_index)]))
+		# Team positioning is automatic now. Wait for the ball to reach the
+		# receiving zone, then time the Space contact.
 		var receiving: bool = (ph == "serve_flight" or ph == "attack_flight") \
 			and int(m.rally.get("chaser_side", -1)) == int(m.player_side) \
 			and int(m.rally.get("chaser_slot", -1)) == int(m.active_slot)
 		if receiving:
-			_send_action("sprint", true)
 			var guard := 0
 			while guard < 400 and str(m.phase) == ph and float(m.ball.time_left()) > 0.12 and not bool(m.rally.get("receive_pressed", false)):
-				_steer_to(m, m.ball.end)
 				await get_tree().create_timer(0.01).timeout
 				guard += 1
 				t += 0.01
-			_send_action("sprint", false)
-			for a in ["move_left", "move_right", "move_forward", "move_back"]:
-				_send_action(a, false)
 			if not bool(m.rally.get("receive_pressed", false)):
 				await _tap("action", 0.04)
 				receives += 1

@@ -12,7 +12,6 @@ var options: Dictionary = {
 	"auto_receive": false,
 	"auto_set": true,
 	"auto_attack": false,
-	"assist_move": true,
 	"tactics_slowmo": true
 }
 var tournament: Dictionary = {}
